@@ -1,37 +1,84 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PaperTradingEngine } from '../src/core/paper-engine.js';
+import { PaperTradingEngine, METEORA_DLMM_PROGRAM_ID } from '../src/core/paper-engine.js';
 
-function candles({ count = 80, start = 100 } = {}) {
+function candles({ count = 80, step = 0.025, amplitude = 0.15, phase = 1.4, period = 0.9 } = {}) {
   return Array.from({ length: count }, (_, i) => {
-    const close = start + i * 0.05 + Math.sin(i * 1.5) * 0.4;
-    return { open: close - 0.03, high: close + 0.3, low: close - 0.3, close, volume: i === count - 1 ? 1500 : 1000 };
+    const close = 100 + i * step + amplitude * Math.sin(i * period + phase);
+    return {
+      timestamp: 1_800_000_000_000 + i * 300_000,
+      open: close - 0.02,
+      high: close + 0.35,
+      low: close - 0.35,
+      close,
+      volume: i === count - 1 ? 1_200 : 1_000
+    };
   });
 }
 
+function verifiedWalletEvent(wallet, timestamp, instructionIndex) {
+  return {
+    walletAddress: wallet,
+    eventType: 'add-liquidity',
+    verified: true,
+    success: true,
+    programId: METEORA_DLMM_PROGRAM_ID,
+    poolAddress: 'pool-lp-test',
+    signature: 'sig-' + wallet,
+    instructionIndex,
+    quoteSide: true,
+    quoteAmountUsd: 150,
+    timestamp
+  };
+}
+
 function snapshot(timestamp, overrides = {}) {
-  const c5 = candles();
-  const c30 = candles();
+  const five = candles();
+  const thirty = candles();
   return {
     timestamp,
     pool: {
-      poolAddress: 'pool-test',
+      poolAddress: 'pool-lp-test',
+      tokenMint: 'mint-lp-test',
       chain: 'solana',
       symbol: 'TEST/SOL',
       tvlUsd: 100_000,
-      volume24hUsd: 50_000,
-      fees24hUsd: 100,
+      activeTvlUsd: 75_000,
+      volume24hUsd: 150_000,
+      fees24hUsd: 150,
+      fees7dUsd: 1_000,
       dataAgeSec: 5,
-      liquidityTrend24hPct: 1,
-      feeVolumeConsistency: 'high'
+      volatility24hPct: 3.5,
+      liquidityTrend24hPct: 0
     },
-    priceUsd: c5.at(-1).close,
-    candles5m: c5,
-    candles30m: c30,
+    security: {
+      verified: true,
+      mintAuthorityDisabled: true,
+      freezeAuthorityDisabled: true,
+      honeypot: false,
+      scam: false,
+      dataAgeSec: 10,
+      top10HoldersPct: 25,
+      top10DevWalletPct: 5,
+      holders: 1_000,
+      tokenAgeDays: 30,
+      marketCapUsd: 2_000_000
+    },
+    marketData: { candles5mAgeSec: 30, candles30mAgeSec: 120 },
+    candles5m: five,
+    candles30m: thirty,
+    priceUsd: five.at(-1).close,
     walletSignals: [
-      { walletAddress: 'wallet-a', eventType: 'add-liquidity', success: true, timestamp: timestamp - 20_000, quoteAmountUsd: 100, inRange: true },
-      { walletAddress: 'wallet-b', eventType: 'add-liquidity', timestamp: timestamp - 10_000, quoteAmountUsd: 150, inRange: true }
+      verifiedWalletEvent('wallet-a', timestamp - 20_000, 1),
+      verifiedWalletEvent('wallet-b', timestamp - 10_000, 2)
     ],
+    lpRisk: {
+      verified: true,
+      source: 'meteora-bin-stress-simulator',
+      stressLossPct: 5,
+      expectedInventoryDragPct7d: 0.05,
+      simulatedRangeCoveragePct: 98
+    },
     ...overrides
   };
 }
@@ -40,66 +87,104 @@ function engine(options = {}) {
   return new PaperTradingEngine({ initialEquityUsd: 10_000, ...options });
 }
 
-test('hybrid entry requires multi-timeframe confirmation and distinct wallet convergence', async () => {
-  const e = engine();
-  const result = await e.processSnapshot(snapshot(1_800_000_000_000));
-  assert.equal(result.entry.status, 'opened');
-  assert.equal(result.entry.evaluation.walletCount, 2);
-  assert.equal(result.portfolio.openPositions, 1);
-  assert.ok(result.entry.position.reservedRiskUsd <= 50.000001);
-  assert.ok(result.entry.position.allocationUsd * 8.25 / 100 <= 50.000001);
-});
-
-test('hybrid entry fails closed without enough distinct wallet groups', () => {
+test('balanced LP entry requires economic edge, verified wallet adds, security and bin stress evidence', async () => {
   const e = engine();
   const s = snapshot(1_800_000_000_000);
-  s.walletSignals = [s.walletSignals[0], { ...s.walletSignals[0], walletAddress: 'wallet-a' }];
   const evaluation = e.evaluateEntry(s, s.timestamp);
-  assert.equal(evaluation.eligible, false);
-  assert.match(evaluation.reason, /wallet convergence/);
+  assert.equal(evaluation.eligible, true, evaluation.reason);
+  assert.ok(evaluation.economics.expectedNetEdgePct > 0.1);
+  const result = await e.processSnapshot(s);
+  assert.equal(result.entry.status, 'opened');
+  assert.equal(result.entry.evaluation.walletCount, 2);
+  assert.ok(result.entry.position.allocationUsd <= 1_250);
+  assert.ok(result.entry.position.reservedRiskUsd <= 30.000001);
+  assert.equal(result.entry.position.markAccuracy, 'entry-estimate');
 });
 
-test('stale pool data is rejected before technical evaluation', () => {
+test('wallet convergence rejects unverified, wrong-pool, wrong-program and duplicate instructions', () => {
   const e = engine();
-  const s = snapshot(1_800_000_000_000, { pool: { ...snapshot(1_800_000_000_000).pool, dataAgeSec: 120 } });
-  const evaluation = e.evaluateEntry(s, s.timestamp);
-  assert.equal(evaluation.eligible, false);
-  assert.match(evaluation.reason, /stale/);
+  const s = snapshot(1_800_000_000_000);
+  s.walletSignals = [
+    { ...s.walletSignals[0], verified: false },
+    { ...s.walletSignals[1], poolAddress: 'different-pool' }
+  ];
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.match(result.reason, /wallet LP convergence/);
 });
 
-test('hard stop closes a paper position deterministically', async () => {
+test('LP economics rejects an unstable fee spike and negative net fee edge', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  s.pool.fees24hUsd = 1_000;
+  s.pool.fees7dUsd = 100;
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.ok(result.hardFails.some(x => /fee pace unstable/.test(x)));
+});
+
+test('entry fails closed without security verification and bin-level risk model', () => {
+  const e = engine();
+  const a = snapshot(1_800_000_000_000, { security: { verified: false } });
+  assert.match(e.evaluateEntry(a, a.timestamp).reason, /security gate/);
+  const b = snapshot(1_800_000_000_000, { lpRisk: { stressLossPct: 4 } });
+  assert.match(e.evaluateEntry(b, b.timestamp).reason, /bin-level LP stress/);
+});
+
+test('stress loss above the configured ceiling is rejected', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  s.lpRisk.stressLossPct = 12;
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.match(result.reason, /stress-loss/);
+});
+
+test('stress-adjusted hard stop closes a paper LP position', async () => {
   const e = engine();
   const start = 1_800_000_000_000;
   const first = await e.processSnapshot(snapshot(start));
   assert.equal(first.entry.status, 'opened');
-  const next = snapshot(start + 60_000, { inventoryPnlPct: -8.5 });
+  const next = snapshot(start + 60_000, { inventoryPnlPct: -6.5 });
   next.walletSignals = [];
   const result = await e.processSnapshot(next);
   assert.equal(result.exits.length, 1);
-  assert.equal(result.exits[0].reason, 'hard-stop-loss');
+  assert.equal(result.exits[0].reason, 'stress-adjusted-hard-stop');
   assert.equal(result.portfolio.openPositions, 0);
 });
 
-test('dynamic trailing exit activates after profit and closes on giveback', async () => {
+test('profit trailing lock closes after a 1 percentage-point giveback', async () => {
   const e = engine();
   const start = 1_800_000_000_000;
   await e.processSnapshot(snapshot(start));
   const up = snapshot(start + 60_000, { inventoryPnlPct: 4 });
   up.walletSignals = [];
-  const armed = await e.processSnapshot(up);
-  assert.equal(armed.exits.length, 0);
-  const down = snapshot(start + 120_000, { inventoryPnlPct: 2.3 });
+  assert.equal((await e.processSnapshot(up)).exits.length, 0);
+  const down = snapshot(start + 120_000, { inventoryPnlPct: 2.5 });
   down.walletSignals = [];
   const closed = await e.processSnapshot(down);
-  assert.equal(closed.exits[0].reason, 'dynamic-trailing-stop');
+  assert.equal(closed.exits[0].reason, 'profit-trailing-lock');
 });
 
-test('AI reject recommendation is recorded as commentary and cannot veto entry', async () => {
-  const e = engine({ analyst: { analyzePool: async () => ({ score: 10, recommendation: 'reject', summary: 'advisory only' }) } });
+test('verified withdrawals by two tracked wallets trigger exit', async () => {
+  const e = engine();
+  const start = 1_800_000_000_000;
+  await e.processSnapshot(snapshot(start));
+  const s = snapshot(start + 60_000);
+  s.walletSignals = [
+    { ...verifiedWalletEvent('wallet-a', start + 50_000, 10), eventType: 'remove-liquidity', signature: 'remove-a' },
+    { ...verifiedWalletEvent('wallet-b', start + 55_000, 11), eventType: 'remove-liquidity', signature: 'remove-b' }
+  ];
+  const result = await e.processSnapshot(s);
+  assert.equal(result.exits.length, 1);
+  assert.equal(result.exits[0].reason, 'tracked-wallet-liquidity-withdrawal');
+});
+
+test('AI recommendation is advisory and cannot change deterministic decision', async () => {
+  const e = engine({ analyst: { analyzePool: async () => ({ score: 0, recommendation: 'reject', summary: 'advisory only' }) } });
   const result = await e.processSnapshot(snapshot(1_800_000_000_000));
   assert.equal(result.entry.status, 'opened');
   assert.equal(result.entry.aiAnalysis.recommendation, 'reject');
-  assert.equal(result.portfolio.openPositions, 1);
 });
 
 test('paper state round-trips and duplicate snapshots are ignored', async () => {
@@ -112,15 +197,17 @@ test('paper state round-trips and duplicate snapshots are ignored', async () => 
   assert.equal(restored.positions.size, 1);
 });
 
-test('daily loss limit blocks new entries after losses reach configured threshold', async () => {
-  const e = engine({ config: { maxOpenPositions: 1, stopLossPct: 50, maxDailyLossPct: 0.4 } });
+test('daily-loss circuit breaker blocks new LP entries', async () => {
+  const e = engine({ config: { maxOpenPositions: 1, maxDailyLossPct: 0.4 } });
   const start = 1_800_000_000_000;
   await e.processSnapshot(snapshot(start));
-  const loss = snapshot(start + 60_000, { inventoryPnlPct: -50 });
+  const loss = snapshot(start + 60_000, { inventoryPnlPct: -10 });
   loss.walletSignals = [];
   await e.processSnapshot(loss);
   const later = snapshot(start + 120_000);
-  later.pool.poolAddress = 'another-pool';
+  later.pool.poolAddress = 'other-pool';
+  later.pool.tokenMint = 'other-mint';
+  later.walletSignals = later.walletSignals.map(x => ({ ...x, poolAddress: 'other-pool' }));
   const blocked = await e.processSnapshot(later);
-  assert.equal(blocked.entry.reason, 'daily-loss-limit');
+  assert.equal(blocked.entry.reason, 'daily-loss-circuit-breaker');
 });
