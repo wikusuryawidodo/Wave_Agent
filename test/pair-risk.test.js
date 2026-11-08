@@ -75,7 +75,7 @@ test('pair risk rejects one-sided flow, very low sell activity and late-pump/dum
   });
   assert.equal(result.eligible, false);
   assert.ok(result.failures.some(x => /sell-side activity/.test(x)));
-  assert.ok(result.failures.some(x => /buy\\/sell/.test(x)));
+  assert.ok(result.failures.some(x => x.includes('buy/sell')));
   assert.ok(result.failures.some(x => /price move/.test(x)));
 });
 
