@@ -38,10 +38,10 @@ for (const [name, value] of [
 ]) {
   if (!(value > 0 && value <= 0.25)) throw new Error(`${name} must be >0 and <=25%`);
 }
-if (config.maxRiskPerPositionPct > 0.01 || config.maxPortfolioRiskPct > 0.02) {
+if (config.maxRiskPerPositionPct > 0.01 || config.maxPortfolioRiskPct > 0.01) {
   throw new Error('Risk caps exceed hard safety bounds');
 }
-if (config.maxPortfolioRiskPct < config.maxRiskPerPositionPct) {
+if (!(config.maxPositionAllocationPct > 0 && config.maxPositionAllocationPct <= 0.25)) {\n  throw new Error('MAX_POSITION_ALLOCATION_PCT must be >0 and <=25%');\n}\nif (config.maxPortfolioRiskPct < config.maxRiskPerPositionPct) {
   throw new Error('MAX_PORTFOLIO_RISK_PCT cannot be below per-position risk');
 }
 if (!Number.isInteger(config.maxOpenPositions) || config.maxOpenPositions < 1 || config.maxOpenPositions > 2) {
