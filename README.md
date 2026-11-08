@@ -1,58 +1,73 @@
-# Meridian AI DLMM
+# Meridian AI DLMM / Wave_Agent
 
-Read-only Solana/Meteora DLMM analytics and paper simulator, with an OpenRouter-first AI analyst and Helius blockchain adapter.
+Read-only Solana/Meteora DLMM analytics with a deterministic **paper-only** trading engine and an advisory AI analyst.
 
-**Default posture: paper-only.** This project has no wallet signer, private-key loader, swap sender, add-liquidity sender, remove-liquidity sender, or transaction submission path.
+**Safety posture:** there is no wallet signer, private-key loader, swap sender, add-liquidity sender, remove-liquidity sender, or transaction submission path. The engine simulates paper entries, marks, fees, exits and account equity only.
+
+## Strategy preset
+
+- **Entry: hybrid.** Requires at least two distinct tracked wallet groups to add quote-side liquidity in the prior 120 seconds, a quality pool score, and bullish 30m trend + 5m momentum/volume confirmation.
+- **Style: balanced.** Risk budget is 0.5% of current equity per position, aggregate reserved position risk capped at 1%, maximum two positions, and maximum 25% equity allocation per position.
+- **Exit: dynamic.** Hard stop at -8% net position return; trailing protection activates at +3% and exits after a 1.5 percentage-point giveback; also exits for a 30-minute out-of-range condition or fee APR below 7% after 60 minutes.
+
+See [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md) for risk math, snapshot fields, accounting assumptions and operation instructions.
 
 ## Architecture
 
-- Strategy foundation: Meridian's documented wallet-triggered, deterministic screening/position-management architecture is the design reference.
-- Helius: Solana JSON-RPC, public wallet log subscription, DAS asset reads and Enhanced Transactions query adapter.
+- Helius: read-only Solana JSON-RPC, public wallet log subscription, DAS asset reads and Enhanced Transactions query adapter.
 - Meteora: official DLMM SDK adapter for active bin, fee info and surrounding bin state; public Data API adapter for pool discovery and historical data.
-- AI: OpenRouter first, optional OpenAI API fallback. AI produces research summaries only; it cannot authorize execution.
-- Simulator: bin allocation, inventory mark-to-market, fee approximation, IL-vs-hold and snapshot backtest.
+- AI: OpenRouter first, optional OpenAI API fallback. AI runs as an analyst and is advisory only; it cannot authorize, veto, resize or close a position.
+- Paper engine: deterministic wallet-convergence and multi-timeframe signal gate, risk-based sizing, persistent paper ledger, fee/mark model, hard stop, trailing stop, out-of-range and low-fee exits.
+- Backtest: snapshot-based backtest and DLMM bin simulation helpers.
 
-## Important upstream relationship
+## Important integration boundary
 
-This is a **companion implementation**, not a direct fork or a copy of the `yunus-0x/meridian` source. The upstream README describes a Solana bot that watches tracked LP wallets, detects liquidity convergence for the same mint, screens Meteora/Jupiter pools, then manages positions with deterministic rules. That original runtime has its own configuration and transaction paths. This project currently implements independent read-only adapters and DLMM analytics; the original wallet-convergence trigger and position manager have not yet been merged here.
+The engine is implemented and can be driven using the documented JSONL snapshot contract. The current Helius wallet watcher still emits raw subscription notifications; it does **not yet parse verified Meteora add-liquidity events and merge them automatically with pool metrics and 5m/30m candles**. Do not treat token transfers as wallet LP-add signals. A read-only signal adapter is still needed before unattended, continuously-fed paper operation.
 
-Upstream: https://github.com/yunus-0x/meridian
+The inventory PnL fallback is a simplified concentrated-liquidity approximation, not exact Meteora PositionV2 bin/share accounting. Exact paper PnL requires observed bin inventory, position liquidity shares and fee checkpoints.
 
 ## Quick start (Ubuntu 24.04)
 
-See [docs/DEPLOY-UBUNTU24.md](docs/DEPLOY-UBUNTU24.md).
-
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/meridian-ai-dlmm.git
-cd meridian-ai-dlmm
+git clone https://github.com/wikusuryawidodo/Wave_Agent.git
+cd Wave_Agent
 npm install
 cp .env.example .env
 chmod 600 .env
-# Edit .env and set Helius + OpenRouter credentials.
+# Fill a USD equity mark and optional Helius/OpenRouter read-only credentials.
 npm test
 npm start
 ```
 
-## Environment
+## Configure the paper equity
 
-Required for Helius:
-- `HELIUS_API_KEY` or `HELIUS_RPC_URL`
+The engine uses USD-denominated risk sizing. Set either:
 
-Required for OpenRouter AI:
-- `OPENROUTER_API_KEY`
-- `OPENROUTER_MODEL` (exact active model slug)
+```env
+# e.g. 3 SOL starting equity × $150/SOL = $450 USD
+STARTING_EQUITY_SOL=3
+SOL_PRICE_USD=150
 
-Optional OpenAI fallback:
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
+# alternatively, set the paper account directly in USD
+# PAPER_STARTING_EQUITY_USD=450
+```
 
-Solana RPC can be derived from the Helius key. For production, use a dedicated Helius endpoint and monitor provider quotas. Never commit `.env`.
+The worker fails closed unless one method produces a positive USD equity value. Never use an arbitrary stale SOL price for meaningful paper results.
 
-## Commands
+## Run the paper engine
+
+The worker consumes one JSON snapshot per line:
+
+```bash
+npm run paper:worker < fixtures/paper-snapshots.jsonl
+```
+
+The fixture is synthetic and demonstrates an entry followed by a deterministic stop; it is not market data. In a live read-only research setup, a separate adapter must construct compliant snapshots from verified data. Use `PAPER_STATE_PATH` to choose the persistent state file.
+
+Other commands:
 
 ```bash
 npm test
-npm start
 npm run backtest -- fixtures/sample-snapshots.json
 npm run meteora:discover -- 20
 npm run meteora:inspect -- <LB_PAIR_ADDRESS> 20
@@ -61,16 +76,10 @@ npm run helius:watch
 npm run ai:check
 ```
 
-`npm run ai:check` sends a synthetic sample pool summary to the configured AI provider. Do not use real secrets in fixtures or test snapshots.
+## AI role
 
-## VPS operation
-
-The Meteora worker emits read-only pool snapshots to stdout/journald. A separate Helius wallet watcher can subscribe to logs for a public address. See `deploy/` for systemd service examples.
-
-## Test status
-
-The test suite uses mocked network responses for Helius and OpenRouter. Passing tests do **not** prove live RPC credentials, subscription limits, AI model availability, or current remote schema compatibility. Validate integrations on your VPS before relying on them.
+The AI analyst is called only after a deterministic paper entry. It can annotate the position with research notes; all entry eligibility, sizing, risk limits and exit decisions remain deterministic. Missing or invalid AI output never changes the trading decision.
 
 ## Security
 
-Read [SECURITY.md](SECURITY.md). Never add a seed phrase or wallet private key. Keep AI output advisory and let deterministic rules own risk decisions.
+Never add a seed phrase or wallet private key. Keep `.env` private. The worker stores paper account state locally and does not transmit or sign transactions.
