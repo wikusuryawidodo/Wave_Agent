@@ -113,10 +113,10 @@ test('paper state round-trips and duplicate snapshots are ignored', async () => 
 });
 
 test('daily loss limit blocks new entries after losses reach configured threshold', async () => {
-  const e = engine({ config: { maxOpenPositions: 1, stopLossPct: 50, maxDailyLossPct: 0.5 } });
+  const e = engine({ config: { maxOpenPositions: 1, stopLossPct: 50, maxDailyLossPct: 1 } });
   const start = 1_800_000_000_000;
   await e.processSnapshot(snapshot(start));
-  const loss = snapshot(start + 60_000, { inventoryPnlPct: -1 });
+  const loss = snapshot(start + 60_000, { inventoryPnlPct: -50 });
   loss.walletSignals = [];
   await e.processSnapshot(loss);
   const later = snapshot(start + 120_000);
