@@ -35,7 +35,7 @@ const DEFAULTS = {
 };
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const finite = value => Number.isFinite(Number(value));
+const finite = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
 const utcDay = timestamp => new Date(timestamp).toISOString().slice(0, 10);
 
 function timestampMs(value, fallback) {
@@ -79,7 +79,7 @@ export class PaperTradingEngine {
     for (const key of ['riskPerPositionPct', 'maxPortfolioRiskPct']) {
       if (!(this.config[key] > 0 && this.config[key] <= 0.01)) throw new Error(`${key} must be >0 and <=1%`);
     }
-    if (this.config.maxPortfolioRiskPct < this.config.riskPerPositionPct) {
+    if (!Number.isInteger(this.config.maxOpenPositions) || this.config.maxOpenPositions < 1 || this.config.maxOpenPositions > 2) {\n      throw new Error('maxOpenPositions must be 1 or 2 for balanced risk preset');\n    }\n    if (!(this.config.maxPositionAllocationPct > 0 && this.config.maxPositionAllocationPct <= 0.25)) {\n      throw new Error('maxPositionAllocationPct must be >0 and <=25%');\n    }\n    if (this.config.maxPortfolioRiskPct < this.config.riskPerPositionPct) {
       throw new Error('maxPortfolioRiskPct cannot be below riskPerPositionPct');
     }
     this.initialEquityUsd = initialEquityUsd;
