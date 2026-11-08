@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - ".bootstrap/part-*"
+      - ".bootstrap/**"
 
 permissions:
   contents: write
@@ -32,6 +32,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The GitHub App token can push source files but not create workflow files.
+          # The test workflow will be created separately by the repository connector.
+          rm -f .github/workflows/test.yml
           rm -rf .bootstrap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
