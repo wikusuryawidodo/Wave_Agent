@@ -30,19 +30,19 @@ let engine;
 try {
   const saved = JSON.parse(await fs.readFile(statePath, 'utf8'));
   engine = PaperTradingEngine.fromState(saved, { analyst, config: engineConfig });
-  process.stderr.write(`Restored paper state: ${statePath}\\n`);
+  process.stderr.write(\`Restored paper state: \${statePath}\n\`);
 } catch (error) {
   if (error.code !== 'ENOENT') {
-    console.error(`Cannot restore paper state: ${error.message}`);
+    console.error(\`Cannot restore paper state: \${error.message}\`);
     process.exit(2);
   }
   engine = new PaperTradingEngine({ initialEquityUsd: config.startingEquityUsd, analyst, config: engineConfig });
-  process.stderr.write(`Created paper account with $${config.startingEquityUsd.toFixed(2)} starting equity.\\n`);
+  process.stderr.write(\`Created paper account with $\${config.startingEquityUsd.toFixed(2)} starting equity.\n\`);
 }
 
 async function persist() {
   await fs.mkdir(path.dirname(path.resolve(statePath)), { recursive: true });
-  const temporary = `${statePath}.tmp`;
+  const temporary = \`\${statePath}.tmp\`;
   await fs.writeFile(temporary, JSON.stringify(engine.exportState(), null, 2), { mode: 0o600 });
   await fs.rename(temporary, statePath);
 }
@@ -54,8 +54,8 @@ for await (const line of input) {
     const snapshot = JSON.parse(line);
     const result = await engine.processSnapshot(snapshot);
     await persist();
-    process.stdout.write(JSON.stringify(result) + '\\n');
+    process.stdout.write(JSON.stringify(result) + '\n');
   } catch (error) {
-    process.stderr.write(JSON.stringify({ type: 'paper_input_error', message: error.message }) + '\\n');
+    process.stderr.write(JSON.stringify({ type: 'paper_input_error', message: error.message }) + '\n');
   }
 }
