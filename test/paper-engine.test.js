@@ -51,6 +51,20 @@ function snapshot(timestamp, overrides = {}) {
       volatility24hPct: 3.5,
       liquidityTrend24hPct: 0
     },
+    pairEvidence: {
+      source: 'dexscreener',
+      chainId: 'solana',
+      pairAddress: 'pool-lp-test',
+      baseToken: { address: 'mint-lp-test' },
+      quoteToken: { address: 'So11111111111111111111111111111111111111112' },
+      pairCreatedAtMs: timestamp - 21 * 86_400_000,
+      marketCapUsd: 2_000_000,
+      fdvUsd: 2_400_000,
+      liquidityUsd: 400_000,
+      priceChange24hPct: 12,
+      txns24h: { buys: 100, sells: 60 },
+      dataRetrievedAt: timestamp
+    },
     security: {
       verified: true,
       mintAuthorityDisabled: true,
