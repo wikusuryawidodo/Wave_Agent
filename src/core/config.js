@@ -18,6 +18,18 @@ export const config = Object.freeze({
   minVolume24hUsd: Number(process.env.MIN_VOLUME_24H_USD ?? 10_000),
   maxPoolDataAgeSec: Number(process.env.MAX_POOL_DATA_AGE_SEC ?? 90),
   maxSecurityDataAgeSec: Number(process.env.MAX_SECURITY_DATA_AGE_SEC ?? 300),
+  minPairAgeDays: Number(process.env.MIN_PAIR_AGE_DAYS ?? 14),
+  maxPairEvidenceAgeSec: Number(process.env.MAX_PAIR_EVIDENCE_AGE_SEC ?? 120),
+  minMarketCapUsd: Number(process.env.MIN_MARKET_CAP_USD ?? 250_000),
+  maxFdvToMarketCap: Number(process.env.MAX_FDV_TO_MARKET_CAP ?? 2.5),
+  minPairLiquidityUsd: Number(process.env.MIN_PAIR_LIQUIDITY_USD ?? 50_000),
+  minLiquidityToMarketCap: Number(process.env.MIN_LIQUIDITY_TO_MARKET_CAP ?? 0.08),
+  minTransactions24h: Number(process.env.MIN_TRANSACTIONS_24H ?? 50),
+  minSells24h: Number(process.env.MIN_SELLS_24H ?? 15),
+  minSellBuyRatio: Number(process.env.MIN_SELL_BUY_RATIO ?? 0.35),
+  maxSellBuyRatio: Number(process.env.MAX_SELL_BUY_RATIO ?? 3.5),
+  minPairPriceChange24hPct: Number(process.env.MIN_PAIR_CHANGE_24H_PCT ?? -18),
+  maxPairPriceChange24hPct: Number(process.env.MAX_PAIR_CHANGE_24H_PCT ?? 45),
   minFeeApr7dPct: Number(process.env.MIN_FEE_APR_7D_PCT ?? 40),
   minFeeApr24hPct: Number(process.env.MIN_FEE_APR_24H_PCT ?? 35),
   minExpectedNetEdgePct: Number(process.env.MIN_EXPECTED_NET_EDGE_PCT ?? 0.10),
@@ -45,6 +57,10 @@ if (!(config.maxPortfolioRiskPct >= config.maxRiskPerPositionPct && config.maxPo
 }
 if (!(config.maxPositionAllocationPct > 0 && config.maxPositionAllocationPct <= 0.125)) {
   throw new Error('MAX_POSITION_ALLOCATION_PCT must be >0 and <=12.5%');
+}
+if (config.minPairAgeDays < 14 || config.minMarketCapUsd < 250_000 ||
+    config.minPairLiquidityUsd < 50_000 || config.maxFdvToMarketCap > 2.5) {
+  throw new Error('Pair-age and market-cap filters cannot be weakened below the conservative preset');
 }
 if (!Number.isInteger(config.maxOpenPositions) || config.maxOpenPositions < 1 || config.maxOpenPositions > 2) {
   throw new Error('MAX_OPEN_POSITIONS must be 1 or 2');
