@@ -22,7 +22,7 @@ The worker reads one JSON snapshot per line from stdin. Each snapshot must inclu
 - `pool`: `poolAddress`, `tvlUsd`, `volume24hUsd`, `fees24hUsd`, and `dataAgeSec` (freshness is fail-closed). Optional fields include `chain`, `symbol`, `liquidityTrend24hPct`, `feeVolumeConsistency`, and `audit.critical`.
 - `priceUsd`: current price in USD.
 - `candles5m` and `candles30m`: at least 50 OHLCV candles each, with `open`, `high`, `low`, `close`, `volume`.
-- `walletSignals`: events with `walletAddress` or `walletGroup`, `eventType: "add-liquidity"`, `timestamp`, `quoteAmountUsd`, and optional `success` / `inRange`. Distinct wallet groups are deduplicated; events must be recent and each must contribute at least $10 quote-side liquidity.
+- `walletSignals`: events with `walletAddress` or `walletGroup`, `eventType: "add-liquidity"`, `timestamp`, `quoteAmountUsd`, with `success: true` from a verified successful Meteora LP event and optional `inRange`. Distinct wallet groups are deduplicated; events must be recent and each must contribute at least $10 quote-side liquidity.
 - Optional `inventoryPnlPct`: externally calculated inventory-only return percentage for the paper position. If omitted, the engine uses its simplified concentrated-liquidity inventory approximation.
 
 A signal example is available in `fixtures/paper-snapshot.example.json`. Do not populate wallet events from token transfers or unverified parser guesses: the event must represent a successful liquidity add. The current Helius watcher does not yet produce this unified snapshot contract automatically; an upstream adapter still needs to map verified wallet events, pool metrics and candles into this format.
