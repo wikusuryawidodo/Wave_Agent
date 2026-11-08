@@ -1,0 +1,40 @@
+name: Bootstrap Meridian source bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".bootstrap/part-*"
+
+permissions:
+  contents: write
+
+jobs:
+  unpack-source:
+    if: github.event.head_commit.message == 'Bootstrap Meridian AI DLMM source bundle'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reassemble and verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/part-* | base64 --decode > /tmp/meridian-ai-dlmm.tar.gz
+          echo "e111c50d4a2fc20b258e327a86c8c3dc6bd41dff2a968d0fcf9fd0a63b7819af  /tmp/meridian-ai-dlmm.tar.gz" | sha256sum --check
+          tar -tzf /tmp/meridian-ai-dlmm.tar.gz >/dev/null
+          tar -xzf /tmp/meridian-ai-dlmm.tar.gz -C .
+
+      - name: Commit extracted source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "[bootstrap-extract] Add Meridian AI DLMM source v0.3.0"
+          git push origin main
