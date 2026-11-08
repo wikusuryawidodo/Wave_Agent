@@ -4,6 +4,7 @@ import { buildReadOnlyAdapters } from './adapters/configured-adapters.js';
 import { createGmgnReadOnlyProvider } from './adapters/gmgn-readonly.js';
 import { createHeliusReadOnlyAdapter } from './adapters/helius-readonly.js';
 import { createAiProvider } from './ai/provider.js';
+import { createDexScreenerReadOnlyAdapter } from './adapters/dexscreener-readonly.js';
 import { PaperLedger } from './core/paper-ledger.js';
 import { estimateFeeYield } from './core/fee-model.js';
 
@@ -16,6 +17,7 @@ export const gmgn = createGmgnReadOnlyProvider();
 export const helius = process.env.HELIUS_API_KEY || process.env.HELIUS_RPC_URL
   ? createHeliusReadOnlyAdapter() : null;
 export const aiProvider = createAiProvider();
+export const dexScreener = createDexScreenerReadOnlyAdapter();
 export const meteoraOnchain = readOnly.meteoraOnchain;
 for (const adapter of readOnly.adapters) registry.register(adapter);
 
