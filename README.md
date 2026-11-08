@@ -6,9 +6,10 @@ Read-only Solana/Meteora DLMM analytics with a deterministic **paper-only** trad
 
 ## Strategy preset
 
-- **Entry: hybrid.** Requires at least two distinct tracked wallet groups to add quote-side liquidity in the prior 120 seconds, a quality pool score, and bullish 30m trend + 5m momentum/volume confirmation.
-- **Style: balanced.** Risk budget is 0.5% of current equity per position, aggregate reserved position risk capped at 1%, maximum two positions, and maximum 25% equity allocation per position.
-- **Exit: dynamic.** Hard stop at -8% net position return; trailing protection activates at +3% and exits after a 1.5 percentage-point giveback; also exits for a 30-minute out-of-range condition or fee APR below 7% after 60 minutes.
+- **Entry: hybrid LP.** Requires persistent fee economics, verified token security, an exact mature pair, market confirmation on 5m/30m, two distinct verified Meteora LP-add wallet groups, and bin-level stress evidence.
+- **Style: balanced LP.** Planned risk is 0.3% of equity per position, aggregate reserved risk is capped at 0.6%, at most two open positions, and at most 12.5% equity allocated to one position.
+- **Exit: dynamic LP.** Stress-adjusted hard stop, profit trailing lock, net take-profit, out-of-range timeout, 30m trend reversal, fee-yield decay, tracked-wallet withdrawals and a seven-day time stop.
+- **Pair and token safety:** exact pair at least 14 days old; token age at least 14 days; market cap at least $250k; FDV/market-cap at most 2.5; pair liquidity at least $50k and 8% of market cap; minimum 24h sell activity and bounded buy/sell ratio.
 
 See [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md) for risk math, snapshot fields, accounting assumptions and operation instructions.
 
@@ -17,14 +18,19 @@ See [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md) for risk math, snapshot fields,
 - Helius: read-only Solana JSON-RPC, public wallet log subscription, DAS asset reads and Enhanced Transactions query adapter.
 - Meteora: official DLMM SDK adapter for active bin, fee info and surrounding bin state; public Data API adapter for pool discovery and historical data.
 - AI: OpenRouter first, optional OpenAI API fallback. AI runs as an analyst and is advisory only; it cannot authorize, veto, resize or close a position.
-- Paper engine: deterministic wallet-convergence and multi-timeframe signal gate, risk-based sizing, persistent paper ledger, fee/mark model, hard stop, trailing stop, out-of-range and low-fee exits.
+- Pair data: read-only DexScreener enrichment for pair creation time, market cap, FDV, liquidity, price change and 24h buy/sell activity. Exact pair-address + mint matching is required.
+- Paper engine: deterministic wallet-convergence, token/pair safety, fee-edge economics, multi-timeframe market gate, stress-based sizing and dynamic LP exits.
 - Backtest: snapshot-based backtest and DLMM bin simulation helpers.
 
 ## Important integration boundary
 
-The engine is implemented and can be driven using the documented JSONL snapshot contract. The current Helius wallet watcher still emits raw subscription notifications; it does **not yet parse verified Meteora add-liquidity events and merge them automatically with pool metrics and 5m/30m candles**. Do not treat token transfers as wallet LP-add signals. A read-only signal adapter is still needed before unattended, continuously-fed paper operation.
+The engine is implemented and can be driven using the documented JSONL snapshot contract. The current Helius wallet watcher still emits raw subscription notifications; it does **not yet parse verified Meteora add/remove-liquidity instructions and merge them automatically with pool metrics, exact pair evidence and 5m/30m candles**. The DexScreener adapter supplies pair age/cap/liquidity evidence only; it does not certify token safety. A verified wallet-event parser and a bin-level stress/mark simulator are still required before unattended paper operation. Do not manufacture the `verified` flags from raw logs or transfers.
 
 The inventory PnL fallback is a simplified concentrated-liquidity approximation, not exact Meteora PositionV2 bin/share accounting. Exact paper PnL requires observed bin inventory, position liquidity shares and fee checkpoints.
+
+## Pair-age and market-cap evidence
+
+Pair-age, market-cap, FDV, pair-liquidity, 24h price-change and buy/sell activity filters use the documented [DexScreener pair API](https://docs.dexscreener.com/api/reference). DexScreener describes `pairCreatedAt`, `marketCap`, `fdv`, `liquidity`, `priceChange` and `txns` as available pair fields. These are screening signals, not a guarantee against rugs or manipulation. The engine rejects missing, stale, mismatched or below-floor evidence.
 
 ## Quick start (Ubuntu 24.04)
 
