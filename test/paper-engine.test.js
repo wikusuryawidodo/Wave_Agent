@@ -29,7 +29,7 @@ function snapshot(timestamp, overrides = {}) {
     candles5m: c5,
     candles30m: c30,
     walletSignals: [
-      { walletAddress: 'wallet-a', eventType: 'add-liquidity', timestamp: timestamp - 20_000, quoteAmountUsd: 100, inRange: true },
+      { walletAddress: 'wallet-a', eventType: 'add-liquidity', success: true, timestamp: timestamp - 20_000, quoteAmountUsd: 100, inRange: true },
       { walletAddress: 'wallet-b', eventType: 'add-liquidity', timestamp: timestamp - 10_000, quoteAmountUsd: 150, inRange: true }
     ],
     ...overrides
@@ -113,7 +113,7 @@ test('paper state round-trips and duplicate snapshots are ignored', async () => 
 });
 
 test('daily loss limit blocks new entries after losses reach configured threshold', async () => {
-  const e = engine({ config: { maxOpenPositions: 1, stopLossPct: 50, maxDailyLossPct: 1 } });
+  const e = engine({ config: { maxOpenPositions: 1, stopLossPct: 50, maxDailyLossPct: 0.4 } });
   const start = 1_800_000_000_000;
   await e.processSnapshot(snapshot(start));
   const loss = snapshot(start + 60_000, { inventoryPnlPct: -50 });
