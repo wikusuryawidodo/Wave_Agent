@@ -53,7 +53,7 @@ function walletConvergence(signals, now, config) {
     const eventType = String(signal.eventType ?? '').toLowerCase().replaceAll('_', '-');
     const wallet = String(signal.walletGroup ?? signal.walletAddress ?? '').trim();
     const quoteUsd = Number(signal.quoteAmountUsd);
-    if (!wallet || eventType !== 'add-liquidity' || signal.success === false ||
+    if (!wallet || eventType !== 'add-liquidity' || signal.success !== true ||
         signal.inRange === false || !Number.isFinite(eventAt) || eventAt > now ||
         now - eventAt > config.walletWindowMs ||
         !Number.isFinite(quoteUsd) || quoteUsd < config.minWalletDepositUsd) continue;
@@ -386,7 +386,7 @@ export class PaperTradingEngine {
       }
     }
 
-    return { status: 'processed', timestamp: now, poolAddress, entry, exits, portfolio: this.summary() };
+    this.lastProcessedAtByPool.set(poolAddress, now);\n    return { status: 'processed', timestamp: now, poolAddress, entry, exits, portfolio: this.summary() };
   }
 
   exportState() {
