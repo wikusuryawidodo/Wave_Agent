@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { calculateIndicators } from './indicators.js';
 import { planLpRange } from './range-planner.js';
 import { assessLpEconomics, sizeLpPosition } from './lp-economics.js';
+import { assessPairRisk } from './pair-risk.js';
 import { clmmInventoryReturnPct, rangeExposure } from './impermanent-loss.js';
 
 export const METEORA_DLMM_PROGRAM_ID = 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo';
@@ -24,8 +25,19 @@ const DEFAULTS = {
   walletConvergenceThreshold: 2,
   walletWindowMs: 120_000,
   meteoraProgramId: METEORA_DLMM_PROGRAM_ID,
-  minTokenAgeDays: 7,
-  minMarketCapUsd: 100_000,
+  minTokenAgeDays: 14,
+  minMarketCapUsd: 250_000,
+  minPairAgeDays: 14,
+  maxPairEvidenceAgeSec: 120,
+  maxFdvToMarketCap: 2.5,
+  minPairLiquidityUsd: 50_000,
+  minLiquidityToMarketCap: 0.08,
+  minTransactions24h: 50,
+  minSells24h: 15,
+  minSellBuyRatio: 0.35,
+  maxSellBuyRatio: 3.5,
+  minPairPriceChange24hPct: -18,
+  maxPairPriceChange24hPct: 45,
   maxTop10HoldersPct: 35,
   maxTop10DevWalletPct: 15,
   minHolders: 200,
@@ -227,6 +239,26 @@ export class PaperTradingEngine {
     const security = checkSecurity(snapshot, this.config);
     if (!security.eligible) return fail('security gate failed', { hardFails: security.failures });
 
+    const pairRisk = assessPairRisk({
+      pairEvidence: snapshot.pairEvidence,
+      poolAddress,
+      tokenMint: pool.tokenMint ?? pool.baseMint,
+      now,
+      minPairAgeDays: this.config.minPairAgeDays,
+      maxPairEvidenceAgeSec: this.config.maxPairEvidenceAgeSec,
+      minMarketCapUsd: this.config.minMarketCapUsd,
+      maxFdvToMarketCap: this.config.maxFdvToMarketCap,
+      minPairLiquidityUsd: this.config.minPairLiquidityUsd,
+      minLiquidityToMarketCap: this.config.minLiquidityToMarketCap,
+      minTransactions24h: this.config.minTransactions24h,
+      minSells24h: this.config.minSells24h,
+      minSellBuyRatio: this.config.minSellBuyRatio,
+      maxSellBuyRatio: this.config.maxSellBuyRatio,
+      minPriceChange24hPct: this.config.minPairPriceChange24hPct,
+      maxPriceChange24hPct: this.config.maxPairPriceChange24hPct
+    });
+    if (!pairRisk.eligible) return fail('pair age / market-cap / liquidity safety gate failed', { hardFails: pairRisk.failures, pairRisk });
+
     const marketFresh = checkMarketData(snapshot, this.config);
     if (!marketFresh.eligible) return fail('market-data gate failed', { hardFails: marketFresh.failures });
 
@@ -336,6 +368,7 @@ export class PaperTradingEngine {
       walletAdds,
       technical: { five, thirty, bbPositionPct: bbPosition },
       security: { verified: true, holders: security.snapshot.holders },
+      pairRisk,
       economics,
       lpRisk: structuredClone(lpRisk),
       range,
