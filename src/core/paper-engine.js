@@ -4,6 +4,8 @@ import { scorePool } from './pool-score.js';
 import { planRange } from './range-planner.js';
 import { clmmInventoryReturnPct, rangeExposure } from './impermanent-loss.js';
 
+export const METEORA_DLMM_PROGRAM_ID = 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo';
+
 const DEFAULTS = {
   entry: 'hybrid',
   style: 'balanced',
@@ -19,6 +21,7 @@ const DEFAULTS = {
   lowFeeAprPct: 7,
   minPositionAgeMs: 60 * 60_000,
   walletConvergenceThreshold: 2,
+  meteoraProgramId: METEORA_DLMM_PROGRAM_ID,
   walletWindowMs: 120_000,
   minWalletDepositUsd: 10,
   minTvlUsd: 25_000,
@@ -163,7 +166,7 @@ export class PaperTradingEngine {
     if (!marketConfirmed) return { ...fail('multi-timeframe market confirmation failed'), poolScore: scored.score,
       market: { trend30m: trend.supertrend, macd5m: technical.macdBias, rsi5m: technical.rsi, volumeRatio5m: technical.volumeRatio } };
 
-    const wallets = walletConvergence(snapshot.walletSignals, now, this.config);
+    const wallets = walletConvergence(snapshot.walletSignals, now, this.config, poolAddress);
     if (wallets.length < this.config.walletConvergenceThreshold) {
       return { ...fail('wallet convergence below threshold'), poolScore: scored.score, walletCount: wallets.length };
     }
