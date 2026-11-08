@@ -15,7 +15,8 @@
     "worker": "node --env-file-if-exists=.env src/worker.js",
     "ai:check": "node --env-file-if-exists=.env src/ai-check.js",
     "helius:watch": "node --env-file-if-exists=.env src/helius-watch.js",
-    "paper:worker": "node --env-file-if-exists=.env src/paper-worker.js"
+    "paper:worker": "node --env-file-if-exists=.env src/paper-worker.js",
+    "paper:dry-run": "node scripts/paper-dry-run.js"
   },
   "dependencies": {
     "@meteora-ag/dlmm": "^1.9.14",
