@@ -14,12 +14,13 @@
     "meteora:discover": "node --env-file-if-exists=.env src/meteora-discover.js",
     "worker": "node --env-file-if-exists=.env src/worker.js",
     "ai:check": "node --env-file-if-exists=.env src/ai-check.js",
-    "helius:watch": "node --env-file-if-exists=.env src/helius-watch.js"
+    "helius:watch": "node --env-file-if-exists=.env src/helius-watch.js",
+    "paper:worker": "node --env-file-if-exists=.env src/paper-worker.js"
   },
   "dependencies": {
     "@meteora-ag/dlmm": "^1.9.14",
     "@solana/web3.js": "^1.98.0",
     "@coral-xyz/anchor": "^0.32.1"
   },
-  "description": "Read-only Solana/Meteora DLMM analytics, OpenRouter-first AI analyst and paper simulator"
-}
+  "description": "Read-only Solana/Meteora DLMM analytics, deterministic hybrid paper trading engine and AI analyst"
+}\n
