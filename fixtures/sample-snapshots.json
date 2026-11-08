@@ -1,0 +1,43 @@
+{
+  "initialCapitalUsd": 1000,
+  "rangePct": 10,
+  "maxAllocationPct": 0.35,
+  "rebalanceCostUsd": 0.1,
+  "snapshots": [
+    {
+      "timestamp": 1735689600000,
+      "price": 100,
+      "tvlUsd": 500000,
+      "feesUsd": 800,
+      "volumeUsd": 250000
+    },
+    {
+      "timestamp": 1735776000000,
+      "price": 102,
+      "tvlUsd": 510000,
+      "feesUsd": 820,
+      "volumeUsd": 270000
+    },
+    {
+      "timestamp": 1735862400000,
+      "price": 99,
+      "tvlUsd": 505000,
+      "feesUsd": 790,
+      "volumeUsd": 240000
+    },
+    {
+      "timestamp": 1735948800000,
+      "price": 104,
+      "tvlUsd": 520000,
+      "feesUsd": 850,
+      "volumeUsd": 300000
+    },
+    {
+      "timestamp": 1736035200000,
+      "price": 101,
+      "tvlUsd": 515000,
+      "feesUsd": 810,
+      "volumeUsd": 260000
+    }
+  ]
+}

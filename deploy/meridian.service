@@ -1,0 +1,22 @@
+[Unit]
+Description=Meridian read-only Meteora DLMM monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meridian
+Group=meridian
+WorkingDirectory=/opt/meridian
+EnvironmentFile=/etc/meridian/meridian.env
+ExecStart=/usr/bin/node /opt/meridian/src/worker.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/meridian
+
+[Install]
+WantedBy=multi-user.target

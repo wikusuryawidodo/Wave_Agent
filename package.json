@@ -1,0 +1,25 @@
+{
+  "name": "meridian-ai-dlmm",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "test": "node --env-file-if-exists=.env --test",
+    "backtest": "node --env-file-if-exists=.env src/run-backtest.js",
+    "meteora:inspect": "node --env-file-if-exists=.env src/meteora-inspect.js",
+    "meteora:discover": "node --env-file-if-exists=.env src/meteora-discover.js",
+    "worker": "node --env-file-if-exists=.env src/worker.js",
+    "ai:check": "node --env-file-if-exists=.env src/ai-check.js",
+    "helius:watch": "node --env-file-if-exists=.env src/helius-watch.js"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.9.14",
+    "@solana/web3.js": "^1.98.0",
+    "@coral-xyz/anchor": "^0.32.1"
+  },
+  "description": "Read-only Solana/Meteora DLMM analytics, OpenRouter-first AI analyst and paper simulator"
+}

@@ -1,0 +1,21 @@
+[Unit]
+Description=Meridian Helius read-only wallet watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meridian
+Group=meridian
+WorkingDirectory=/opt/meridian
+EnvironmentFile=/etc/meridian/meridian.env
+ExecStart=/usr/bin/node /opt/meridian/src/helius-watch.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
