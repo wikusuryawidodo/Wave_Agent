@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 import { config } from './core/config.js';
-import { PaperTradingEngine } from './core/paper-engine.js';
-import { aiProvider } from './index.js';
+import { createAiProvider } from './ai/provider.js';
 import { createMarketAnalyst } from './ai/analyst.js';
+import { PaperTradingEngine } from './core/paper-engine.js';
 
 if (!(config.startingEquityUsd > 0)) {
   console.error('Set SOL_PRICE_USD or PAPER_STARTING_EQUITY_USD before starting the paper worker.');
@@ -12,19 +12,32 @@ if (!(config.startingEquityUsd > 0)) {
 }
 
 const statePath = process.env.PAPER_STATE_PATH || './data/paper-state.json';
-const analyst = aiProvider.available.length ? createMarketAnalyst(aiProvider) : null;
+const ai = createAiProvider();
+const analyst = ai.available.length ? createMarketAnalyst(ai) : null;
+const engineConfig = {
+  riskPerPositionPct: config.maxRiskPerPositionPct,
+  maxPortfolioRiskPct: config.maxPortfolioRiskPct,
+  maxPositionAllocationPct: config.maxPositionAllocationPct,
+  maxOpenPositions: config.maxOpenPositions,
+  minTvlUsd: config.minTvlUsd,
+  minVolume24hUsd: config.minVolume24hUsd,
+  maxVolumeToTvl: config.maxVolumeToTvl,
+  maxPoolDataAgeSec: config.maxPoolDataAgeSec,
+  maxDailyLossPct: config.maxDailyLossPct,
+  maxDrawdownPct: config.maxDrawdownPct
+};
 let engine;
 try {
   const saved = JSON.parse(await fs.readFile(statePath, 'utf8'));
-  engine = PaperTradingEngine.fromState(saved, { analyst });
-  process.stderr.write(`Restored paper state: ${statePath}\n`);
+  engine = PaperTradingEngine.fromState(saved, { analyst, config: engineConfig });
+  process.stderr.write(`Restored paper state: ${statePath}\\n`);
 } catch (error) {
   if (error.code !== 'ENOENT') {
     console.error(`Cannot restore paper state: ${error.message}`);
     process.exit(2);
   }
-  engine = new PaperTradingEngine({ initialEquityUsd: config.startingEquityUsd, analyst });
-  process.stderr.write(`Created paper account with $${config.startingEquityUsd.toFixed(2)} starting equity.\n`);
+  engine = new PaperTradingEngine({ initialEquityUsd: config.startingEquityUsd, analyst, config: engineConfig });
+  process.stderr.write(`Created paper account with $${config.startingEquityUsd.toFixed(2)} starting equity.\\n`);
 }
 
 async function persist() {
@@ -41,8 +54,8 @@ for await (const line of input) {
     const snapshot = JSON.parse(line);
     const result = await engine.processSnapshot(snapshot);
     await persist();
-    process.stdout.write(JSON.stringify(result) + '\n');
+    process.stdout.write(JSON.stringify(result) + '\\n');
   } catch (error) {
-    process.stderr.write(JSON.stringify({ type: 'paper_input_error', message: error.message }) + '\n');
+    process.stderr.write(JSON.stringify({ type: 'paper_input_error', message: error.message }) + '\\n');
   }
 }
