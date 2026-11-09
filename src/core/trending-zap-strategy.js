@@ -38,7 +38,7 @@ const DEFAULTS = Object.freeze({
   nearEdgeFraction: 0.15,
   noFeeIntervalsToExit: 3,
   monitorIntervalMs: 5 * 60_000,
-  maxStagnantPositionMs: 6 * 60 * 60_000
+  // Fee growth is checked at every 5-minute interval.
 });
 
 function securityGate(security, config) {
@@ -209,14 +209,15 @@ export function evaluateTrendingZapCandidate(snapshot, {
 
   const baseMint = pool.baseMint ?? pool.tokenXMint;
   const quoteMint = pool.quoteMint ?? pool.tokenYMint;
-  if (!baseMint || !quoteMint || !inputMint) return fail('base, quote and input mints are required');
+  const targetMint = pool.targetTokenMint ?? pool.tokenMint ?? baseMint;
+  if (!baseMint || !quoteMint || !targetMint || !inputMint) return fail('base, quote, target and input mints are required');
   const isQuoteApproved = approvedQuoteMints.includes(quoteMint);
   if (!isQuoteApproved) return fail('quote mint is not on the configured USDG/WETH allowlist');
 
   const pairRisk = assessPairRisk({
     pairEvidence: snapshot.pairEvidence,
     poolAddress,
-    tokenMint: baseMint,
+    tokenMint: targetMint,
     now,
     minPairAgeDays: config.minTrendingPairAgeDays,
     maxPairEvidenceAgeSec: 120,
@@ -247,13 +248,14 @@ export function evaluateTrendingZapCandidate(snapshot, {
 
   let funding;
   if (fundingMode === 'stable-zap-inrange') {
-    if (inputMint !== quoteMint) return fail('stable zap mode requires the configured quote asset as the only input');
+    if (inputMint !== quoteMint) return fail('quote zap mode requires the configured quote asset as the only input');
     if (!(range.lower <= currentPrice && currentPrice <= range.upper)) return fail('zap range must cover the current price');
-    const zapFailures = validateZapQuote(zapQuote, { inputMint, outputMint: baseMint, now, config });
+    const zapFailures = validateZapQuote(zapQuote, { inputMint, outputMint: targetMint, now, config });
     if (zapFailures.length) return fail('one-token zap quote failed validation', zapFailures);
     funding = {
       mode: fundingMode,
       inputMint,
+      outputMint: targetMint,
       requiresSwap: true,
       targetState: 'two-sided-in-range',
       estimatedPriceImpactBps: Number(zapQuote.priceImpactBps),
@@ -263,7 +265,7 @@ export function evaluateTrendingZapCandidate(snapshot, {
     };
   } else if (fundingMode === 'directional-single-sided') {
     if (!['bullish', 'bearish'].includes(direction)) return fail('direction must be bullish or bearish');
-    if (inputMint !== baseMint) return fail('directional mode requires the base token as the single input');
+    if (inputMint !== targetMint) return fail('directional mode requires the selected target token as the single input');
     const expectedOutOfRange = direction === 'bullish'
       ? range.lower > currentPrice
       : range.upper < currentPrice;
@@ -395,9 +397,6 @@ export function evaluateZapPositionMark(mark, previous = {}, config = {}) {
     return { action: 'close-and-rotate', reason: 'fee-growth-stalled-for-three-marks', inRange, netPnlUsd, state };
   }
   if (nearEdge) return { action: 'prepare-close', reason: 'price-near-range-edge', inRange, netPnlUsd, state };
-  if (ageMs >= settings.maxStagnantPositionMs && feesDelta != null && feesDelta <= 0) {
-    return { action: 'close-and-rotate', reason: 'position-stagnant-six-hours', inRange, netPnlUsd, state };
-  }
   if (finite(mark.minRequiredNetPnlUsd) && netPnlUsd < Number(mark.minRequiredNetPnlUsd)) {
     return { action: 'close-and-rotate', reason: 'net-pnl-below-minimum-hurdle', inRange, netPnlUsd, state };
   }
