@@ -90,9 +90,21 @@ function buildSnapshot(index, now) {
       verifiedEvent('wallet-a-' + index, 20_000, 1),
       verifiedEvent('wallet-b-' + index, 10_000, 2)
     ],
+    lpMark: {
+      verified: true,
+      source: 'meteora-position-v2-bin-fee-replay',
+      feesSinceLastUsd: 0,
+      positionFeeApr24hPct: 170,
+      positionFeeApr7dPct: 160,
+      inRange: true
+    },
     lpRisk: {
       verified: true,
       source: 'meteora-bin-stress-simulator',
+      feeModelVerified: true,
+      feeModelSource: 'meteora-position-v2-bin-fee-replay',
+      positionFeeApr24hPct: 170,
+      positionFeeApr7dPct: 160,
       stressLossPct: 5,
       expectedInventoryDragPct7d: 0.05,
       simulatedRangeCoveragePct: 98
