@@ -126,7 +126,7 @@ Every 5 minutes, evaluate current price versus range, fee delta, inventory mark 
 - Within the outer 15% of the range: \`prepare-close\` warning; watch for an exit or reduce decision.
 - First confirmed mark outside the range: \`close-and-rotate\` recommendation.
 - Three consecutive 5-minute intervals without verified fee growth: recommend close and rotate.
-- Six-hour stagnant position and net-PnL hurdle checks are additional guards.
+- Three consecutive 5-minute marks without fee growth trigger a rotate recommendation; any supplied minimum net-PnL hurdle is checked on every mark.
 
 This monitor is advisory. It does not submit removal, swap or zap transactions. Rotation should only occur when a replacement pool independently passes the same safety and net-fee tests; do not rotate into a lower-quality pool simply to avoid idle time.
 
