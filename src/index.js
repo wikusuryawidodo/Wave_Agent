@@ -9,6 +9,7 @@ import { PaperLedger } from './core/paper-ledger.js';
 import { estimateFeeYield } from './core/fee-model.js';
 
 export { PaperTradingEngine } from './core/paper-engine.js';
+export { rankGmgnDiscoveryTokens } from './core/gmgn-discovery.js';
 export {
   rankTrendingPools,
   chooseTrendingZapRange,
