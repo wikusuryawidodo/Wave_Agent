@@ -66,6 +66,12 @@ if (config.minPairAgeDays < 14 || config.minMarketCapUsd < 250_000 ||
     config.minPairLiquidityUsd < 50_000 || config.maxFdvToMarketCap > 2.5) {
   throw new Error('Pair-age and market-cap filters cannot be weakened below the conservative preset');
 }
+if (config.minPoolFeeApr24hPct < 50 || config.minPoolFeeApr7dPct < 60 ||
+    config.minPositionFeeApr24hPct < 120 || config.minPositionFeeApr7dPct < 150 ||
+    config.minExpectedNetEdgePct < 1 || config.minFeeCoverageRatio < 2 ||
+    config.maxInventoryDragPct7d > 1) {
+  throw new Error('Fee farming thresholds cannot be weakened below the conservative preset');
+}
 if (!Number.isInteger(config.maxOpenPositions) || config.maxOpenPositions < 1 || config.maxOpenPositions > 2) {
   throw new Error('MAX_OPEN_POSITIONS must be 1 or 2');
 }
