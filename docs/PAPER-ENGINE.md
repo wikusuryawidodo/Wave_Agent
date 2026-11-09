@@ -25,6 +25,20 @@ A pool is eligible only when all hard gates pass:
 9. **Wallet confirmation:** at least two distinct wallet groups add quote-side liquidity to the exact pool within 120 seconds. Each event must be marked verified and successful, include the canonical Meteora DLMM program ID, signature, instruction index, and quote-side USD amount >=$25. The engine rejects unverified events; this flag must only be set by a transaction parser that validates the actual instruction and transaction metadata.
 10. **Bin-level risk simulation:** an independently verified Meteora bin simulator must supply stress loss <=8%, seven-day inventory drag <=1.0%, 24h and 7d position-specific fee APR from the proposed bin distribution, fee model source `meteora-position-v2-bin-fee-replay`, and >=90% simulated range coverage. Without these, the engine deliberately refuses entry.
 
+### Fee-farming hurdle example (7-day horizon)
+
+The engine forecasts position fees from the proposed range's own per-bin fee APR:
+
+`grossFeePct = min(positionAPR24h, positionAPR7d) × 168 / 8760 × 65%`
+
+`netEdgePct = grossFeePct - 7dInventoryDragPct - 0.30% roundTripCost`
+
+`coverage = grossFeePct / (7dInventoryDragPct + 0.30%)`
+
+At a 150% position APR, the conservative fee forecast is approximately **1.87%** of deployed capital for seven days after the 35% capture haircut. With 0.50% modeled inventory drag and 0.30% round-trip cost, net edge is about **+1.07%**, with 2.33× fee coverage. At 0.90% inventory drag, the same APR leaves only about +0.67% net and fails both the 1.0% edge and 2× coverage hurdles. With 1.0% inventory drag, it is rejected. These calculations are model assumptions, not a promise of realized fees.
+
+For a 1.0% net target, 65% fee capture, 168-hour horizon and 30 bps costs, the required conservative position APR is approximately 144% when 7d inventory drag is 0.50%, and approximately 185% when drag is 1.00%. This is why a high pool APR alone must not trigger an LP position.
+
 ## Position sizing
 
 Position size is computed from the smaller of the 0.3% single-position equity budget and unused 0.6% portfolio risk budget. The loss denominator is the larger of the planned stop and bin stress loss, plus the 30 bps round-trip cost. Final size is also capped at 12.5% equity and available paper cash.
@@ -38,7 +52,7 @@ This is an intended risk budget, not a guaranteed maximum loss. Gaps, stale pric
 - **Take profit:** net return reaches +8%.
 - **Out of range:** position remains out of range for at least 15 minutes.
 - **Trend reversal:** two consecutive 30m Supertrend bearish observations with ADX >=22.
-- **Fee decay:** after 45 minutes, current captured APR is below 18% or below 45% of entry APR for two consecutive updates.
+- **Fee decay:** after 45 minutes, captured position-level fee APR is below 75% or below 60% of entry APR for two consecutive updates.
 - **Tracked-wallet withdrawal:** two distinct verified tracked-wallet groups remove quote-side liquidity from the same pool during the 120-second window.
 - **Forward economics:** after 45 minutes, current fee projection net of remaining inventory drag and close cost is <=0.
 - **Time stop:** position is closed after seven days if none of the above triggered.
