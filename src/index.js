@@ -9,6 +9,13 @@ import { PaperLedger } from './core/paper-ledger.js';
 import { estimateFeeYield } from './core/fee-model.js';
 
 export { PaperTradingEngine } from './core/paper-engine.js';
+export {
+  rankTrendingPools,
+  chooseTrendingZapRange,
+  chooseDirectionalSingleSidedRange,
+  evaluateTrendingZapCandidate,
+  evaluateZapPositionMark
+} from './core/trending-zap-strategy.js';
 
 export const registry = new ChainRegistry();
 export const ledger = new PaperLedger(config.startingEquityUsd);
