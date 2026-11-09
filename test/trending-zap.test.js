@@ -284,3 +284,40 @@ test('monitor ignores calls faster than five-minute cadence', () => {
   }, previous);
   assert.equal(result.action, 'wait');
 });
+
+
+test('generic quote-zap mode accepts an allowlisted WETH quote asset', () => {
+  const weth = 'WETH_MINT';
+  const s = makeSnapshot({
+    pool: { quoteMint: weth },
+    pairEvidence: { quoteToken: { address: weth } }
+  });
+  const q = {
+    ...options().zapQuote,
+    inputMint: weth,
+    outputMint: TOKEN,
+    compositionVerified: true
+  };
+  const result = evaluateTrendingZapCandidate(s, options({
+    fundingMode: 'quote-zap-inrange',
+    inputMint: weth,
+    approvedQuoteMints: [weth],
+    zapQuote: q
+  }));
+  assert.equal(result.eligible, true, result.failures?.join('; ') || result.reason);
+});
+
+test('tokenized-stock range requires an explicit issuer-approved target mint', () => {
+  const s = makeSnapshot();
+  const candidateOptions = options({ assetProfile: 'tokenized-stock' });
+  const blocked = evaluateTrendingZapCandidate(s, candidateOptions);
+  assert.match(blocked.reason, /issuer allowlist/);
+  const accepted = evaluateTrendingZapCandidate({
+    ...s,
+    assetVerification: { verified: true, source: 'issuer-allowlist' }
+  }, {
+    ...candidateOptions,
+    approvedAssetMints: [TOKEN]
+  });
+  assert.equal(accepted.eligible, true, accepted.failures?.join('; ') || accepted.reason);
+});
