@@ -86,9 +86,21 @@ function snapshot(timestamp, overrides = {}) {
       verifiedWalletEvent('wallet-a', timestamp - 20_000, 1),
       verifiedWalletEvent('wallet-b', timestamp - 10_000, 2)
     ],
+    lpMark: {
+      verified: true,
+      source: 'meteora-position-v2-bin-fee-replay',
+      feesSinceLastUsd: 0,
+      positionFeeApr24hPct: 170,
+      positionFeeApr7dPct: 160,
+      inRange: true
+    },
     lpRisk: {
       verified: true,
       source: 'meteora-bin-stress-simulator',
+      feeModelVerified: true,
+      feeModelSource: 'meteora-position-v2-bin-fee-replay',
+      positionFeeApr24hPct: 170,
+      positionFeeApr7dPct: 160,
       stressLossPct: 5,
       expectedInventoryDragPct7d: 0.05,
       simulatedRangeCoveragePct: 98
@@ -106,7 +118,9 @@ test('balanced LP entry requires economic edge, verified wallet adds, security a
   const s = snapshot(1_800_000_000_000);
   const evaluation = e.evaluateEntry(s, s.timestamp);
   assert.equal(evaluation.eligible, true, evaluation.reason);
-  assert.ok(evaluation.economics.expectedNetEdgePct > 0.1);
+  assert.ok(evaluation.economics.expectedNetEdgePct > 1.0);
+  assert.ok(evaluation.economics.feeCoverageRatio >= 2.0);
+  assert.equal(evaluation.economics.conservativePositionFeeAprPct, 160);
   const result = await e.processSnapshot(s);
   assert.equal(result.entry.status, 'opened');
   assert.equal(result.entry.evaluation.walletCount, 2);
@@ -224,4 +238,83 @@ test('daily-loss circuit breaker blocks new LP entries', async () => {
   later.walletSignals = later.walletSignals.map(x => ({ ...x, poolAddress: 'other-pool' }));
   const blocked = await e.processSnapshot(later);
   assert.equal(blocked.entry.reason, 'daily-loss-circuit-breaker');
+});
+
+
+test('pool-wide APR alone is not sufficient without verified position-level bin fee replay', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  delete s.lpRisk.feeModelVerified;
+  delete s.lpRisk.feeModelSource;
+  delete s.lpRisk.positionFeeApr24hPct;
+  delete s.lpRisk.positionFeeApr7dPct;
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.match(result.reason, /position-specific per-bin fee replay/);
+});
+
+test('high headline pool APR is rejected when the proposed position earns low bin fees', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  s.lpRisk.positionFeeApr24hPct = 90;
+  s.lpRisk.positionFeeApr7dPct = 80;
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.ok(result.hardFails.some(x => /position 7d bin-fee APR too low/.test(x)));
+});
+
+test('LP entry rejects projected inventory drag that consumes the fee edge', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  s.lpRisk.expectedInventoryDragPct7d = 1.2;
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.match(result.reason, /7d inventory-drag/);
+});
+
+test('fee growth is booked only from verified PositionV2 per-bin fee marks', async () => {
+  const e = engine();
+  const start = 1_800_000_000_000;
+  await e.processSnapshot(snapshot(start));
+  const unverified = snapshot(start + 60_000, {
+    lpMark: {
+      verified: false,
+      source: 'pool-apr-estimate',
+      feesSinceLastUsd: 25,
+      positionFeeApr24hPct: 200,
+      positionFeeApr7dPct: 180,
+      inRange: true
+    }
+  });
+  unverified.walletSignals = [];
+  await e.processSnapshot(unverified);
+  const position = [...e.positions.values()][0];
+  assert.equal(position.feesAccruedUsd, 0);
+  assert.equal(position.missingFeeMarkCount, 1);
+
+  const secondMissing = snapshot(start + 120_000, {
+    lpMark: { verified: false, source: 'unverified', feesSinceLastUsd: 50, inRange: true }
+  });
+  secondMissing.walletSignals = [];
+  const result = await e.processSnapshot(secondMissing);
+  assert.equal(result.exits[0].reason, 'missing-verified-position-fee-mark');
+});
+
+test('verified per-bin position fee marks accrue exact reported fees, not pool TVL estimates', async () => {
+  const e = engine();
+  const start = 1_800_000_000_000;
+  await e.processSnapshot(snapshot(start));
+  const update = snapshot(start + 60_000, {
+    lpMark: {
+      verified: true,
+      source: 'meteora-position-v2-bin-fee-replay',
+      feesSinceLastUsd: 7.25,
+      positionFeeApr24hPct: 170,
+      positionFeeApr7dPct: 160,
+      inRange: true
+    }
+  });
+  update.walletSignals = [];
+  await e.processSnapshot(update);
+  assert.equal([...e.positions.values()][0].feesAccruedUsd, 7.25);
 });
