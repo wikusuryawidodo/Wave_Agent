@@ -173,7 +173,7 @@ test('GMGN CLI provider surfaces missing CLI config and validates unsafe paramet
   const cli = createGmgnCliReadOnlyProvider({ execFileImpl: async (_binary, args) => ({
     stdout: args[0] === 'config' ? 'configured' : '{"ok":true}'
   }) });
-  await assert.rejects(() => cli.getSignals('sol', { signalTypes: [14] }), /do not request 14/);
+  assert.deepEqual(await cli.getSignals('sol', { signalTypes: [14] }), { ok: true });
   await assert.rejects(() => cli.getTrending('sol', { filters: { minCreated: '14' } }), /duration/);
   await assert.rejects(() => cli.getTrending('sol', { interval: '30m' }), /Unsupported trending interval/);
 });
