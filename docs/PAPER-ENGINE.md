@@ -145,3 +145,36 @@ The candidate snapshot needs:
 No USDG mint address, WETH mint address, router, Zenith API or SDK zap quote has been hardcoded. The caller must explicitly configure allowed quote mints and quote providers. This avoids treating a token symbol as proof of a stable asset or implying that Zenith integration exists.
 
 The module exports \`rankTrendingPools\`, \`chooseTrendingZapRange\`, \`chooseDirectionalSingleSidedRange\`, \`evaluateTrendingZapCandidate\` and \`evaluateZapPositionMark\`.
+
+
+## GMGN Trending, Market Signals and FOMO distinction
+
+The repository now exposes two read-only GMGN integration paths:
+- \`gmgnCli\`: invokes only the official CLI's \`config --check\` and \`market\` read commands. It supports trending, trenches, signals, hot searches and K-lines.
+- \`gmgn\`: injectable Skills/MCP bridge adapter for deployments that already have an approved read-only GMGN tool bridge.
+
+Before use, install/update the official \`gmgn-cli\`, configure the API key using the CLI's documented configuration flow, and confirm \`gmgn-cli config --check\` succeeds. The CLI adapter checks configuration once before the first market request. Rate limits are managed by GMGN; respect 429 reset information rather than retrying aggressively.
+
+GMGN feeds have different meanings:
+- **Trending:** top tokens ranked by swap activity, with 1m/5m/1h/6h/24h windows. Useful to discover momentum candidates.
+- **Hot Searches:** top searched tokens ranked by visiting count. This is attention/search interest, not executed buy volume.
+- **Market Signals:** discrete events such as price spikes, ATH, Dex trending-bar/ad/boost, smart money buy, platform call and KOL buy. Types 14–16 are excluded from explicit type requests because the documented API rejects them.
+- **Trenches:** launchpad lifecycle groups: new creation, near completion and completed/graduated pools.
+
+The helper \`rankGmgnDiscoveryTokens\` adds a fail-closed shortlist using GMGN market cap, liquidity, token age, rug ratio, wash-trading flag, top-10 concentration, insider/bundler ratios, volume, smart-degen and renowned counts. It only nominates tokens for further research; it does not authorize an LP entry.
+
+### FOMO Thesis and Fomo Top
+
+Fomo Thesis and Fomo Top are separate chart marker datasets, not documented fields in GMGN's standard Market Signal API:
+- **Fomo Thesis** is a post written on FOMO by a user who is holding the token.
+- **Fomo Top** is a transfer marker for an address indexed as a FOMO top wallet. A transfer-in does not prove a market buy; it can be a transfer.
+
+The current GMGN CLI adapter therefore does not claim to fetch Fomo Thesis/Fomo Top. They require a separate supported FOMO/FomoScan data integration. Do not synthesize these markers from regular GMGN smart-money signals.
+
+### How Wave_Agent uses the GMGN data
+
+1. Fetch GMGN Trending 5m/1h and Market Signals (smart-money buy, KOL/platform call, price spike/Dex trending bar).
+2. Optionally use Hot Searches as a secondary attention signal, never as trade volume.
+3. Rank tokens with \`rankGmgnDiscoveryTokens\`; reject high rug ratio, wash trading and incomplete safety fields.
+4. Resolve each token mint to exact Meteora LB pool(s). A trending token without a verified active pool remains discovery-only.
+5. Recalculate pair age, pair liquidity, market cap/FDV, security, 5m/30m market structure, bin-specific position fee APR, inventory drag and zap quote. GMGN is never sufficient by itself to pass the LP entry gate.
