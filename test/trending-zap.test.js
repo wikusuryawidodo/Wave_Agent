@@ -87,6 +87,7 @@ function options(extra = {}) {
     zapQuote: {
       verified: true,
       source: 'read-only-router-quote',
+      compositionVerified: true,
       inputMint: STABLE,
       outputMint: TOKEN,
       quotedAtMs: now,
@@ -186,11 +187,18 @@ test('directional mode requires exact one-sided SDK quote and bullish range abov
     direction: 'bullish',
     zapQuote: null
   });
+  const plannedRange = chooseDirectionalSingleSidedRange({
+    price: 100, volatility24hPct: 5, direction: 'bullish', assetProfile: 'trending'
+  });
   s.singleSidedQuote = {
     verified: true,
     source: 'meteora-sdk-readonly-quote',
+    poolAddress: 'trending-pair',
     singleSidedTokenMint: TOKEN,
-    composition: 'token-only'
+    composition: 'token-only',
+    rangeLower: plannedRange.lower,
+    rangeUpper: plannedRange.upper,
+    inputAmountUsd: 100
   };
   const result = evaluateTrendingZapCandidate(s, args);
   assert.equal(result.eligible, true, result.failures?.join('; ') || result.reason);
