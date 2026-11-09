@@ -10,7 +10,7 @@ Read-only Solana/Meteora DLMM analytics with a deterministic **paper-only** trad
 - **Style: balanced LP.** Planned risk is 0.3% of equity per position, aggregate reserved risk is capped at 0.6%, at most two open positions, and at most 12.5% equity allocated to one position.
 - **Exit: dynamic LP.** Stress-adjusted hard stop, profit trailing lock, net take-profit, out-of-range timeout, 30m trend reversal, fee-yield decay, tracked-wallet withdrawals and a seven-day time stop.
 - **Fee-farming hurdle:** whole-pool APR is only a sanity check; require simulated proposed-range position APR >=120% (24h) and >=150% (7d), projected 7d net edge >=1.0%, fee coverage >=2× inventory drag + round-trip cost, and 7d inventory drag <=1.0%. Forecast fee capture is haircut 35%.
-- **Trending + one-token zap option:** separate paper planner ranks volume/velocity/fee consistency, supports stable/quote-only zap into an in-range range, directional single-sided ranges away from spot, volatility-aware widths (6% / 15% / 30–50%), and five-minute edge/fee/out-of-range monitoring. This option is planner-only; there is no router zap or automatic close transaction.
+- **Trending + one-token zap option:** separate paper planner ranks volume/velocity/fee consistency, supports approved quote-asset zap into an in-range range, directional single-sided ranges away from spot, volatility-aware widths (6% / 15% / 30–50%), and five-minute edge/fee/out-of-range monitoring. This option is planner-only; there is no router zap or automatic close transaction.
 - **Pair and token safety:** exact pair at least 14 days old; token age at least 14 days; market cap at least $250k; FDV/market-cap at most 2.5; pair liquidity at least $50k and 8% of market cap; minimum 24h sell activity and bounded buy/sell ratio.
 
 See [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md) for risk math, snapshot fields, accounting assumptions and operation instructions.
@@ -38,7 +38,7 @@ The entry engine does not count liquidity-mining reward emissions as trading fee
 
 The separate `rankTrendingPools`, `evaluateTrendingZapCandidate`, and `evaluateZapPositionMark` functions are exported from `src/index.js`. The stable-zap path requires a fresh read-only route quote that converts the single input asset into the range's two-sided in-range composition. The directional single-sided path creates a range fully above/below spot and **does not forecast any fees until price activates the range**. Supported quote mints must be explicitly allowlisted by the caller (for example, a verified USDG or WETH mint); never infer stablecoin status from a symbol.
 
-Paper range presets: stable/quiet/tokenized-stock = ±6%; normal trending = ±15%; high-volatility = ±30–50%. A pair younger than 14 days is still rejected by the existing security policy even where the wide-range preset is selected. The 5-minute monitor returns `hold`, `prepare-close`, or `close-and-rotate`; it never sends a zap or remove-liquidity action.
+Paper range presets: stable/quiet/tokenized-stock = ±6% (tokenized stocks require issuer allowlist verification); normal trending = ±15%; high-volatility = ±30–50%. A pair younger than 14 days is still rejected by the existing security policy even where the wide-range preset is selected. The 5-minute monitor returns `hold`, `prepare-close`, or `close-and-rotate`; it never sends a zap or remove-liquidity action.
 
 ## Pair-age and market-cap evidence
 
