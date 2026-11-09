@@ -2,6 +2,7 @@ import { config } from './core/config.js';
 import { ChainRegistry } from './adapters/chain-registry.js';
 import { buildReadOnlyAdapters } from './adapters/configured-adapters.js';
 import { createGmgnReadOnlyProvider } from './adapters/gmgn-readonly.js';
+import { createGmgnCliReadOnlyProvider } from './adapters/gmgn-cli-readonly.js';
 import { createHeliusReadOnlyAdapter } from './adapters/helius-readonly.js';
 import { createAiProvider } from './ai/provider.js';
 import { createDexScreenerReadOnlyAdapter } from './adapters/dexscreener-readonly.js';
@@ -22,6 +23,7 @@ export const registry = new ChainRegistry();
 export const ledger = new PaperLedger(config.startingEquityUsd);
 export const readOnly = buildReadOnlyAdapters();
 export const gmgn = createGmgnReadOnlyProvider();
+export const gmgnCli = createGmgnCliReadOnlyProvider();
 export const helius = process.env.HELIUS_API_KEY || process.env.HELIUS_RPC_URL
   ? createHeliusReadOnlyAdapter() : null;
 export const aiProvider = createAiProvider();
@@ -53,7 +55,8 @@ if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
     maxPortfolioRiskPct:config.maxPortfolioRiskPct*100,
     configuredAdapters:registry.chains(),
     robinhoodRpcDefaultAvailable:true,
-    gmgnConfigured:gmgn.enabled,
+    gmgnSkillsBridgeConfigured:gmgn.enabled,
+    gmgnCliReadOnlyAdapterAvailable:true,
     heliusConfigured:Boolean(helius),
     aiProviderPrimary:aiProvider.primary,
     aiProvidersAvailable:aiProvider.available,
