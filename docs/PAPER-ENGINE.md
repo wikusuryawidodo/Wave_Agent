@@ -90,4 +90,4 @@ npm run paper:worker < fixtures/paper-snapshots.jsonl
 npm test
 \`\`\`
 
-The paper worker never loads a signing key, creates transactions, signs, swaps, adds liquidity, removes liquidity, claims fees, or broadcasts transactions. AI is a post-decision analyst only and cannot change any deterministic decision.
+The paper worker never loads a signing key, creates transactions, signs, swaps, adds liquidity, removes liquidity, claims fees, or broadcasts transactions. AI is a post-decision analyst only and cannot change any deterministic decision. Run `npm run paper:fee-analysis` for fee/IL sensitivity cases. Liquidity-mining reward emissions are excluded from fee APR and would need a separate conservative reward-price/claimability model.
