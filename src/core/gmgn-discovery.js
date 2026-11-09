@@ -33,10 +33,10 @@ export function rankGmgnDiscoveryTokens(items, {
     const swaps = Number(item.swaps);
     const tokenCreatedAtMs = Number(item.creation_timestamp) * 1000;
     const tokenAgeDays = (now - tokenCreatedAtMs) / 86_400_000;
-    const rugRatio = Number(item.rug_ratio);
-    const top10 = Number(item.top_10_holder_rate);
-    const insider = Number(item.rat_trader_amount_rate);
-    const bundler = Number(item.bundler_rate);
+    const rugRatio = Number(item.rug_ratio ?? 1);
+    const top10 = Number(item.top_10_holder_rate ?? 1);
+    const insider = Number(item.rat_trader_amount_rate ?? 1);
+    const bundler = Number(item.bundler_rate ?? 1);
     const washTrading = item.is_wash_trading;
     const smartMoney = Number(item.smart_degen_count ?? 0);
     const renowned = Number(item.renowned_count ?? 0);
@@ -109,7 +109,7 @@ export function rankGmgnDiscoveryTokens(items, {
       insiderRate: finite(insider) ? insider : null,
       bundlerRate: finite(bundler) ? bundler : null,
       priceChangePercent: finite(priceChangePct) ? priceChangePct : null,
-      buySellRatio: buys > 0 ? sells / buys : null,
+      sellBuyRatio: buys > 0 ? sells / buys : null,
       score,
       stage,
       eligibleForMeteoraPoolLookup: failures.length === 0,
