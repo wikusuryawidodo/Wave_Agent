@@ -150,7 +150,7 @@ function validateZapQuote(zapQuote, { inputMint, outputMint, now, config }) {
 export function chooseDirectionalSingleSidedRange({ price, volatility24hPct, direction, assetProfile = 'trending' } = {}) {
   if (!['bullish', 'bearish'].includes(direction)) throw new Error('direction must be bullish or bearish');
   const balanced = chooseTrendingZapRange({ price, volatility24hPct, assetProfile });
-  const widthPct = balanced.halfWidthPct * 2;
+  const widthPct = balanced.halfWidthPct;
   const bufferPct = clamp(Number(volatility24hPct) * 0.25, 0.75, 3);
   const spot = Number(price);
   const lower = direction === 'bullish'
@@ -180,9 +180,10 @@ export function chooseDirectionalSingleSidedRange({ price, volatility24hPct, dir
  * It only creates a proposed plan; it never constructs or broadcasts a transaction.
  */
 export function evaluateTrendingZapCandidate(snapshot, {
-  fundingMode = 'stable-zap-inrange',
+  fundingMode = 'quote-zap-inrange',
   inputMint,
   approvedQuoteMints = [],
+  approvedAssetMints = [],
   assetProfile = 'trending',
   direction = 'bullish',
   zapQuote = null,
@@ -235,6 +236,11 @@ export function evaluateTrendingZapCandidate(snapshot, {
   if (!pairRisk.eligible) return fail('pair maturity/market-cap/liquidity gate failed', pairRisk.failures);
   const securityFailures = securityGate(snapshot.security, config);
   if (securityFailures.length) return fail('token security gate failed', securityFailures);
+  if (assetProfile === 'tokenized-stock' &&
+      (!approvedAssetMints.includes(targetMint) || snapshot.assetVerification?.verified !== true ||
+       snapshot.assetVerification?.source !== 'issuer-allowlist')) {
+    return fail('tokenized-stock mint requires explicit issuer allowlist verification');
+  }
 
   const currentPrice = Number(snapshot.priceUsd ?? snapshot.activeBinPrice ?? 0);
   let range;
@@ -247,7 +253,7 @@ export function evaluateTrendingZapCandidate(snapshot, {
   }
 
   let funding;
-  if (fundingMode === 'stable-zap-inrange') {
+  if (fundingMode === 'stable-zap-inrange' || fundingMode === 'quote-zap-inrange') {
     if (inputMint !== quoteMint) return fail('quote zap mode requires the configured quote asset as the only input');
     if (!(range.lower <= currentPrice && currentPrice <= range.upper)) return fail('zap range must cover the current price');
     const zapFailures = validateZapQuote(zapQuote, { inputMint, outputMint: targetMint, now, config });
@@ -379,7 +385,6 @@ export function evaluateZapPositionMark(mark, previous = {}, config = {}) {
   const nearEdge = normalized <= settings.nearEdgeFraction || normalized >= 1 - settings.nearEdgeFraction;
   const feesDelta = finite(mark.feesSinceLastUsd) ? Math.max(0, Number(mark.feesSinceLastUsd)) : null;
   const noFeeCount = feesDelta == null || feesDelta <= 0 ? Number(previous.noFeeCount ?? 0) + 1 : 0;
-  const ageMs = now - Number(mark.openedAtMs ?? previous.openedAtMs ?? now);
   const feesAccruedUsd = finite(mark.feesAccruedUsd)
     ? Math.max(0, Number(mark.feesAccruedUsd))
     : Number(previous.feesAccruedUsd ?? 0) + Math.max(0, Number(feesDelta ?? 0));
