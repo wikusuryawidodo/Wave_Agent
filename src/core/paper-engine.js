@@ -170,6 +170,12 @@ export class PaperTradingEngine {
     if (!Number.isInteger(this.config.maxOpenPositions) || this.config.maxOpenPositions < 1 || this.config.maxOpenPositions > 2) {
       throw new Error('Balanced LP preset supports 1 or 2 open positions');
     }
+    if (this.config.minPoolFeeApr24hPct < 50 || this.config.minPoolFeeApr7dPct < 60 ||
+        this.config.minPositionFeeApr24hPct < 120 || this.config.minPositionFeeApr7dPct < 150 ||
+        this.config.minExpectedNetEdgePct < 1 || this.config.minFeeCoverageRatio < 2 ||
+        this.config.maxInventoryDragPct7d > 1) {
+      throw new Error('LP fee-farming thresholds cannot be weakened below the conservative preset');
+    }
     this.initialEquityUsd = initialEquityUsd;
     this.cashUsd = initialEquityUsd;
     this.analyst = analyst;
