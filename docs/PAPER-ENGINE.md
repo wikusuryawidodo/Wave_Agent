@@ -91,3 +91,58 @@ npm test
 \`\`\`
 
 The paper worker never loads a signing key, creates transactions, signs, swaps, adds liquidity, removes liquidity, claims fees, or broadcasts transactions. AI is a post-decision analyst only and cannot change any deterministic decision. Run `npm run paper:fee-analysis` for fee/IL sensitivity cases. Liquidity-mining reward emissions are excluded from fee APR and would need a separate conservative reward-price/claimability model.
+
+
+
+## Alternative strategy: trending pools + one-token zap
+
+This module is separate from the balanced-LP engine and is **paper-only**.
+
+### Pool discovery and ranking
+
+Rank candidates by 24h volume, 1h volume velocity versus the 24h hourly average, volume/active-TVL utilization, and consistency of 24h fees versus the trailing seven-day daily average. Reject low-depth pools, volume bursts that are too extreme, missing fee history, and fee pace outside 0.5×–2.5× its seven-day baseline. Trending volume is a discovery signal, not token-safety evidence; all existing age, market-cap, FDV, liquidity and token-security gates still apply.
+
+### One-token funding modes
+
+- **Quote/stable zap in-range:** input only an explicitly allowlisted quote asset (e.g. USDG or WETH). Require a fresh read-only router quote for the exact input/output mint, price impact <=50 bps, auto-balance residual <=5%, expected output and minimum output. The quoted route is expected to convert part of the input asset so the position is two-sided and in-range immediately. If no approved zap quote exists, reject the candidate.
+- **Directional single-sided range:** a token-only position is placed fully above spot for bullish direction or fully below spot for bearish direction. It is not an active fee-farming position while price remains outside the range. Require an SDK read-only one-sided composition quote for the exact mint before treating the plan as viable. Directional inventory risk and missed fee opportunity must be included; this is closer to a range order than immediate stable-yield farming.
+
+The implementation does not assume that a generic one-token input magically becomes two-sided. The \`stable-zap-inrange\` flow needs integration with a router or platform that returns a verifiable quote. Meteora's DLMM instruction set supports \`add_liquidity*\` flows including one-sided parameters, and has separate swap instructions; however, constructing a zap requires quoting and sizing the required swap as well as the LP deposit. No zap transaction is built or sent by this repo.
+
+### Adaptive range presets
+
+- Stable, quiet and tokenized-stock profiles: ±6%.
+- Normal trending token profile: ±15%.
+- High-volatility profile: ±30–50%, calculated as \`clamp(2.5 × volatility24hPct, 30, 50)\`.
+
+These are starting presets, not universal optimal ranges. The high-volatility preset does not waive the 14-day pair-age and token-security restrictions. For a new listing, observe it until it passes maturity and security gates rather than using a wider band as a substitute for due diligence.
+
+For directional single-sided ranges, the range is placed fully beyond spot with a volatility-dependent activation buffer. It does not earn swap fees until price trades into that range. This is distinct from stable-only zap into a range that already contains spot.
+
+### Five-minute position monitor
+
+Every 5 minutes, evaluate current price versus range, fee delta, inventory mark and expected close cost:
+- In range and verified fees increasing: hold, subject to net-edge and risk gates.
+- Within the outer 15% of the range: \`prepare-close\` warning; watch for an exit or reduce decision.
+- First confirmed mark outside the range: \`close-and-rotate\` recommendation.
+- Three consecutive 5-minute intervals without verified fee growth: recommend close and rotate.
+- Six-hour stagnant position and net-PnL hurdle checks are additional guards.
+
+This monitor is advisory. It does not submit removal, swap or zap transactions. Rotation should only occur when a replacement pool independently passes the same safety and net-fee tests; do not rotate into a lower-quality pool simply to avoid idle time.
+
+### Portfolio sizing
+
+Keep two open positions under the existing 0.6% aggregate risk budget. A third position is not enabled by default: adding one without reducing per-position risk would breach the aggregate cap. For small capital, quote/stable-only entry can be easier to budget, but router price impact and fee coverage still determine whether it is worthwhile.
+
+### Required inputs and integration status
+
+The candidate snapshot needs:
+- Pool: base/quote mint, TVL, active TVL, volume24h, volume1h, fees24h, fees7d, volatility and freshness.
+- Exact pair evidence and token security snapshot meeting the existing maturity thresholds.
+- \`lpRisk\` from a verified per-bin fee and stress replay.
+- For quote/stable zap: \`zapQuote\` with \`source=read-only-router-quote\`, exact mints, quote timestamp, input USD amount, expected output, minimum output, price-impact bps and residual balance error.
+- For directional single-sided: \`singleSidedQuote\` from the read-only Meteora SDK adapter confirming the single input mint and bin composition.
+
+No USDG mint address, WETH mint address, router, Zenith API or SDK zap quote has been hardcoded. The caller must explicitly configure allowed quote mints and quote providers. This avoids treating a token symbol as proof of a stable asset or implying that Zenith integration exists.
+
+The module exports \`rankTrendingPools\`, \`chooseTrendingZapRange\`, \`chooseDirectionalSingleSidedRange\`, \`evaluateTrendingZapCandidate\` and \`evaluateZapPositionMark\`.
