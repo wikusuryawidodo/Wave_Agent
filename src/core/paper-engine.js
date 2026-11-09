@@ -44,10 +44,13 @@ const DEFAULTS = {
   minActiveTvlRatio: 0.30,
   minVolumeToActiveTvl: 0.20,
   maxVolumeToActiveTvl: 4.5,
-  minFeeApr24hPct: 35,
-  minFeeApr7dPct: 40,
+  minPoolFeeApr24hPct: 50,
+  minPoolFeeApr7dPct: 60,
+  minPositionFeeApr24hPct: 120,
+  minPositionFeeApr7dPct: 150,
   maxFeeSpikeRatio: 2.5,
-  minExpectedNetEdgePct: 0.10,
+  minExpectedNetEdgePct: 1.0,
+  minFeeCoverageRatio: 2.0,
   feeCaptureShare: 0.65,
   expectedHoldHours: 168,
   roundTripCostBps: 30,
@@ -60,7 +63,7 @@ const DEFAULTS = {
   maxRsi5m: 65,
   minVolumeRatio5m: 0.8,
   maxVolumeRatio5m: 3.5,
-  maxInventoryDragPct7d: 0.5,
+  maxInventoryDragPct7d: 1.0,
   stopLossFloorPct: 4,
   stopLossCeilingPct: 7.5,
   trailingActivationPct: 2.5,
@@ -68,8 +71,9 @@ const DEFAULTS = {
   takeProfitPct: 8,
   outOfRangeGraceMs: 15 * 60_000,
   minPositionAgeMs: 45 * 60_000,
-  lowFeeAprPct: 18,
-  feeDecayRatio: 0.45,
+  lowFeeAprPct: 75,
+  feeDecayRatio: 0.60,
+  missingFeeMarkConfirmations: 2,
   feeDecayConfirmations: 2,
   trendExitAdx: 22,
   trendExitConfirmations: 2,
@@ -305,6 +309,11 @@ export class PaperTradingEngine {
     if (!isFiniteNumber(lpRisk.expectedInventoryDragPct7d) ||
         Number(lpRisk.expectedInventoryDragPct7d) > this.config.maxInventoryDragPct7d ||
         Number(lpRisk.expectedInventoryDragPct7d) < 0) return fail('7d inventory-drag estimate missing or too high');
+    if (lpRisk.feeModelVerified !== true || lpRisk.feeModelSource !== 'meteora-position-v2-bin-fee-replay' ||
+        !isFiniteNumber(lpRisk.positionFeeApr24hPct) || Number(lpRisk.positionFeeApr24hPct) <= 0 ||
+        !isFiniteNumber(lpRisk.positionFeeApr7dPct) || Number(lpRisk.positionFeeApr7dPct) <= 0) {
+      return fail('verified position-specific per-bin fee replay required; pool APR alone is insufficient');
+    }
     if (!isFiniteNumber(lpRisk.simulatedRangeCoveragePct) || Number(lpRisk.simulatedRangeCoveragePct) < 90) {
       return fail('simulated bin range coverage below 90%');
     }
@@ -317,6 +326,8 @@ export class PaperTradingEngine {
         volume24hUsd: Number(pool.volume24hUsd),
         fees24hUsd: Number(pool.fees24hUsd),
         fees7dUsd: Number(pool.fees7dUsd),
+        positionFeeApr24hPct: Number(lpRisk.positionFeeApr24hPct),
+        positionFeeApr7dPct: Number(lpRisk.positionFeeApr7dPct),
         allocationUsd: Math.min(this.equityUsd * this.config.maxPositionAllocationPct, this.cashUsd),
         volatility24hPct: Number(pool.volatility24hPct),
         liquidityTrend24hPct: Number(pool.liquidityTrend24hPct),
@@ -325,9 +336,13 @@ export class PaperTradingEngine {
         roundTripCostBps: this.config.roundTripCostBps,
         feeCaptureShare: this.config.feeCaptureShare,
         expectedHoldHours: this.config.expectedHoldHours,
-        minFeeApr7dPct: this.config.minFeeApr7dPct,
-        minFeeApr24hPct: this.config.minFeeApr24hPct,
+        minPoolFeeApr7dPct: this.config.minPoolFeeApr7dPct,
+        minPoolFeeApr24hPct: this.config.minPoolFeeApr24hPct,
+        minPositionFeeApr7dPct: this.config.minPositionFeeApr7dPct,
+        minPositionFeeApr24hPct: this.config.minPositionFeeApr24hPct,
         minNetEdgePct: this.config.minExpectedNetEdgePct,
+        minFeeCoverageRatio: this.config.minFeeCoverageRatio,
+        maxInventoryDragPct7d: this.config.maxInventoryDragPct7d,
         maxFeeSpikeRatio: this.config.maxFeeSpikeRatio,
         minActiveTvlRatio: this.config.minActiveTvlRatio,
         minVolumeToActiveTvl: this.config.minVolumeToActiveTvl,
@@ -423,27 +438,33 @@ export class PaperTradingEngine {
       position.markAccuracy = 'approximate-clmm-fallback';
     }
 
-    if (isFiniteNumber(mark.feesSinceLastUsd)) {
-      position.feesAccruedUsd += Math.max(0, Number(mark.feesSinceLastUsd));
-    } else if (hours > 0 && inRange && isFiniteNumber(pool.activeTvlUsd) && Number(pool.activeTvlUsd) > 0 &&
-        isFiniteNumber(pool.fees24hUsd) && Number(pool.fees24hUsd) >= 0) {
-      position.feesAccruedUsd += Number(pool.fees24hUsd) *
-        (position.allocationUsd / Number(pool.activeTvlUsd)) *
-        this.config.feeCaptureShare * (hours / 24);
-    }
+    const verifiedFeeMark =
+      mark.verified === true &&
+      mark.source === 'meteora-position-v2-bin-fee-replay' &&
+      isFiniteNumber(mark.feesSinceLastUsd) &&
+      Number(mark.feesSinceLastUsd) >= 0 &&
+      isFiniteNumber(mark.positionFeeApr24hPct) &&
+      isFiniteNumber(mark.positionFeeApr7dPct) &&
+      Number(mark.positionFeeApr24hPct) >= 0 &&
+      Number(mark.positionFeeApr7dPct) >= 0;
 
-    const feeApr24hPct = isFiniteNumber(pool.activeTvlUsd) && Number(pool.activeTvlUsd) > 0 &&
-      isFiniteNumber(pool.fees24hUsd)
-      ? Number(pool.fees24hUsd) / Number(pool.activeTvlUsd) * 365 * 100 * this.config.feeCaptureShare : 0;
-    const feeApr7dPct = isFiniteNumber(pool.activeTvlUsd) && Number(pool.activeTvlUsd) > 0 &&
-      isFiniteNumber(pool.fees7dUsd)
-      ? (Number(pool.fees7dUsd) / 7) / Number(pool.activeTvlUsd) * 365 * 100 * this.config.feeCaptureShare : 0;
+    if (verifiedFeeMark) {
+      position.feesAccruedUsd += Number(mark.feesSinceLastUsd);
+      position.feeApr24hPct = Number(mark.positionFeeApr24hPct) * this.config.feeCaptureShare;
+      position.feeApr7dPct = Number(mark.positionFeeApr7dPct) * this.config.feeCaptureShare;
+      position.currentFeeAprPct = Math.min(position.feeApr24hPct, position.feeApr7dPct);
+      position.missingFeeMarkCount = 0;
+      position.feeMarkAccuracy = 'verified-position-v2-bin-fee-replay';
+    } else {
+      position.missingFeeMarkCount = (position.missingFeeMarkCount ?? 0) + 1;
+      position.feeApr24hPct = 0;
+      position.feeApr7dPct = 0;
+      position.currentFeeAprPct = 0;
+      position.feeMarkAccuracy = 'missing-unverified-bin-fee-mark';
+    }
 
     position.currentPrice = price;
     position.currentInRange = inRange;
-    position.feeApr24hPct = feeApr24hPct;
-    position.feeApr7dPct = feeApr7dPct;
-    position.currentFeeAprPct = Math.min(feeApr24hPct, feeApr7dPct || feeApr24hPct);
     position.outOfRangeSince = inRange ? null : (position.outOfRangeSince ?? now);
 
     if (isFiniteNumber(mark.closeCostUsd)) position.lastMarkCloseCostUsd = Math.max(0, Number(mark.closeCostUsd));
@@ -480,6 +501,7 @@ export class PaperTradingEngine {
   _exitReason(position, now) {
     if (position.netPnlPct <= -position.stopLossPct) return 'stress-adjusted-hard-stop';
     if (position.walletWithdrawalCount >= this.config.walletConvergenceThreshold) return 'tracked-wallet-liquidity-withdrawal';
+    if ((position.missingFeeMarkCount ?? 0) >= this.config.missingFeeMarkConfirmations) return 'missing-verified-position-fee-mark';
     if (position.outOfRangeSince != null && now - position.outOfRangeSince >= this.config.outOfRangeGraceMs) return 'out-of-range-timeout';
     if (position.trendReversalCount >= this.config.trendExitConfirmations) return '30m-trend-reversal';
     if (position.feeDecayCount >= this.config.feeDecayConfirmations) return 'fee-yield-decay';
@@ -577,7 +599,7 @@ export class PaperTradingEngine {
             currentPrice: evaluation.technical.five.price,
             range: evaluation.range,
             lpRisk: evaluation.lpRisk,
-            entryFeeAprPct: evaluation.economics.conservativeFeeAprPct * this.config.feeCaptureShare,
+            entryFeeAprPct: evaluation.economics.conservativePositionFeeAprPct * this.config.feeCaptureShare,
             entryNetEdgePct: evaluation.economics.expectedNetEdgePct,
             entryScore: evaluation.hybridScore,
             walletCount: evaluation.walletCount,
@@ -592,9 +614,10 @@ export class PaperTradingEngine {
             peakPnlPct: -costUsd / positionSize.allocationUsd * 100,
             currentInRange: true,
             outOfRangeSince: null,
-            feeApr24hPct: evaluation.economics.feeApr24hPct * this.config.feeCaptureShare,
-            feeApr7dPct: evaluation.economics.feeApr7dPct * this.config.feeCaptureShare,
-            currentFeeAprPct: evaluation.economics.conservativeFeeAprPct * this.config.feeCaptureShare,
+            feeApr24hPct: evaluation.economics.positionFeeApr24hPct * this.config.feeCaptureShare,
+            feeApr7dPct: evaluation.economics.positionFeeApr7dPct * this.config.feeCaptureShare,
+            currentFeeAprPct: evaluation.economics.conservativePositionFeeAprPct * this.config.feeCaptureShare,
+            missingFeeMarkCount: 0,
             feeDecayCount: 0,
             trendReversalCount: 0,
             walletWithdrawalCount: 0,
