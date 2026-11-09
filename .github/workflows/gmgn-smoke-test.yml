@@ -37,7 +37,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Install repository dependencies (including GMGN CLI)
         run: npm install --no-audit --no-fund
@@ -45,11 +44,11 @@ jobs:
       - name: Configure GMGN credentials securely
         shell: bash
         env:
-          GMGN_API_KEY: \${{ secrets.GMGN_API_KEY }}
-          GMGN_KEYPAIR_PEM: \${{ secrets.GMGN_KEYPAIR_PEM }}
+          GMGN_API_KEY: ${{ secrets.GMGN_API_KEY }}
+          GMGN_KEYPAIR_PEM: ${{ secrets.GMGN_KEYPAIR_PEM }}
         run: |
           set -euo pipefail
-          if [[ -z "\${GMGN_API_KEY:-}" || -z "\${GMGN_KEYPAIR_PEM:-}" ]]; then
+          if [[ -z "${GMGN_API_KEY:-}" || -z "${GMGN_KEYPAIR_PEM:-}" ]]; then
             echo "::error::Missing repository Actions secrets. Configure GMGN_API_KEY and GMGN_KEYPAIR_PEM as described in README."
             exit 1
           fi
@@ -63,9 +62,9 @@ jobs:
       - name: Fetch GMGN trending tokens (read-only)
         shell: bash
         env:
-          CHAIN: \${{ inputs.chain }}
-          INTERVAL: \${{ inputs.interval }}
-          RESULT_LIMIT: \${{ inputs.limit }}
+          CHAIN: ${{ inputs.chain }}
+          INTERVAL: ${{ inputs.interval }}
+          RESULT_LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
           ./node_modules/.bin/gmgn-cli market trending \
@@ -95,7 +94,7 @@ jobs:
       - name: Upload read-only trending response
         uses: actions/upload-artifact@v4
         with:
-          name: gmgn-trending-\${{ inputs.chain }}-\${{ inputs.interval }}
-          path: \${{ runner.temp }}/gmgn-trending.json
+          name: gmgn-trending-${{ inputs.chain }}-${{ inputs.interval }}
+          path: ${{ runner.temp }}/gmgn-trending.json
           if-no-files-found: error
           retention-days: 1
