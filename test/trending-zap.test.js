@@ -288,10 +288,9 @@ test('monitor ignores calls faster than five-minute cadence', () => {
 
 test('generic quote-zap mode accepts an allowlisted WETH quote asset', () => {
   const weth = 'WETH_MINT';
-  const s = makeSnapshot({
-    pool: { quoteMint: weth },
-    pairEvidence: { quoteToken: { address: weth } }
-  });
+  const s = makeSnapshot();
+  s.pool.quoteMint = weth;
+  s.pairEvidence.quoteToken = { address: weth };
   const q = {
     ...options().zapQuote,
     inputMint: weth,
