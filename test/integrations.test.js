@@ -129,3 +129,52 @@ test('GMGN discovery ranks qualified tokens but blocks rug, wash trading and mis
   assert.equal(ranked[0].stage, 'research');
   assert.equal(ranked[0].sellBuyRatio, 2 / 3);
 });
+
+
+import { createGmgnCliReadOnlyProvider } from '../src/adapters/gmgn-cli-readonly.js';
+
+test('GMGN CLI provider checks config once and runs trending and signals as read-only commands', async () => {
+  const calls = [];
+  const cli = createGmgnCliReadOnlyProvider({
+    execFileImpl: async (binary, args) => {
+      calls.push({ binary, args });
+      if (args[0] === 'config') return { stdout: 'configured' };
+      return { stdout: JSON.stringify({ data: { rank: [] } }) };
+    }
+  });
+  await cli.getTrending('sol', {
+    interval: '5m',
+    limit: 25,
+    orderBy: 'volume',
+    filterTags: ['renounced', 'frozen'],
+    platforms: ['pool_meteora'],
+    filters: { minLiquidity: 50_000, minSmartDegenCount: 1, maxInsiderRate: 0.3, minCreated: '14d' }
+  });
+  await cli.getSignals('sol', { signalTypes: [12, 13, 20], marketCapMin: 250_000 });
+  assert.equal(calls.filter(x => x.args[0] === 'config').length, 1);
+  assert.equal(calls[1].args[0], 'market');
+  assert.ok(calls[1].args.includes('trending'));
+  assert.ok(calls[1].args.includes('--min-liquidity'));
+  assert.ok(calls[1].args.includes('--max-insider-rate'));
+  assert.ok(calls[1].args.includes('--min-created'));
+  assert.ok(calls[1].args.includes('--raw'));
+  assert.ok(calls[2].args.includes('--signal-type'));
+  assert.ok(calls[2].args.includes('--mc-min'));
+  assert.equal(cli.readOnly, true);
+  assert.equal(cli.swap, undefined);
+});
+
+test('GMGN CLI provider surfaces missing CLI config and validates unsafe parameters', async () => {
+  const missing = createGmgnCliReadOnlyProvider({
+    execFileImpl: async () => { const error = new Error('not configured'); error.stderr = 'API key missing'; throw error; }
+  });
+  await assert.rejects(() => missing.getTrending('sol'), /configuration check failed.*API key missing/);
+
+  const cli = createGmgnCliReadOnlyProvider({ execFileImpl: async (_binary, args) => ({
+    stdout: args[0] === 'config' ? 'configured' : '{"ok":true}'
+  }) });
+  await assert.rejects(() => cli.getSignals('sol', { signalTypes: [14] }), /do not request 14/);
+  await assert.rejects(() => cli.getTrending('sol', { filters: { minCreated: '14' } }), /duration/);
+  await assert.rejects(() => cli.getTrending('sol', { interval: '30m' }), /Unsupported trending interval/);
+});
+
