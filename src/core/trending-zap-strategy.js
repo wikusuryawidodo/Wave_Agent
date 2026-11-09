@@ -129,14 +129,16 @@ export function chooseTrendingZapRange({ price, volatility24hPct, assetProfile =
 function validateZapQuote(zapQuote, { inputMint, outputMint, now, config }) {
   const failures = [];
   if (zapQuote?.verified !== true || zapQuote?.source !== 'read-only-router-quote') failures.push('verified read-only zap quote missing');
-  if (zapQuote?.inputMint !== inputMint || zapQuote?.outputMint !== outputMint) failures.push('zap input/output mint mismatch');
+  if (inputMint === outputMint || zapQuote?.inputMint !== inputMint || zapQuote?.outputMint !== outputMint) failures.push('zap input/output mint mismatch');
+  if (zapQuote?.compositionVerified !== true) failures.push('two-sided in-range position composition not verified');
   const ageMs = now - Number(zapQuote?.quotedAtMs);
   if (!finite(zapQuote?.quotedAtMs) || ageMs < 0 || ageMs > config.maxQuoteAgeSec * 1000) failures.push('zap quote stale');
   if (!finite(zapQuote?.priceImpactBps) || Number(zapQuote.priceImpactBps) > config.maxZapPriceImpactBps) failures.push('zap price impact too high');
   if (!finite(zapQuote?.balanceErrorPct) || Number(zapQuote.balanceErrorPct) > config.maxZapBalanceErrorPct) failures.push('zap auto-balance residual too high');
   if (!finite(zapQuote?.inputAmountUsd) || Number(zapQuote.inputAmountUsd) <= 0 ||
       !finite(zapQuote?.expectedOutputAmount) || Number(zapQuote.expectedOutputAmount) <= 0 ||
-      !finite(zapQuote?.minimumOutputAmount) || Number(zapQuote.minimumOutputAmount) <= 0) {
+      !finite(zapQuote?.minimumOutputAmount) || Number(zapQuote.minimumOutputAmount) <= 0 ||
+      Number(zapQuote?.minimumOutputAmount) > Number(zapQuote?.expectedOutputAmount)) {
     failures.push('zap quote amounts missing or invalid');
   }
   if (finite(zapQuote?.priceImpactBps) && Number(zapQuote.priceImpactBps) < 0) failures.push('zap price impact invalid');
@@ -266,10 +268,15 @@ export function evaluateTrendingZapCandidate(snapshot, {
       ? range.lower > currentPrice
       : range.upper < currentPrice;
     if (!expectedOutOfRange) return fail('directional single-sided range must be fully above spot for bullish or below spot for bearish');
-    if (snapshot.singleSidedQuote?.verified !== true ||
-        snapshot.singleSidedQuote?.singleSidedTokenMint !== inputMint ||
-        snapshot.singleSidedQuote?.source !== 'meteora-sdk-readonly-quote') {
-      return fail('SDK-verified single-sided bin composition quote required');
+    const single = snapshot.singleSidedQuote ?? {};
+    if (single.verified !== true || single.singleSidedTokenMint !== inputMint ||
+        single.source !== 'meteora-sdk-readonly-quote' || single.poolAddress !== poolAddress ||
+        single.composition !== 'token-only' ||
+        !finite(single.rangeLower) || !finite(single.rangeUpper) ||
+        Math.abs(Number(single.rangeLower) - range.lower) / range.lower > 0.0001 ||
+        Math.abs(Number(single.rangeUpper) - range.upper) / range.upper > 0.0001 ||
+        !finite(single.inputAmountUsd) || Number(single.inputAmountUsd) <= 0) {
+      return fail('SDK-verified single-sided bin composition quote required for exact pool, mint and range');
     }
     funding = {
       mode: fundingMode,
@@ -372,11 +379,11 @@ export function evaluateZapPositionMark(mark, previous = {}, config = {}) {
   const feesDelta = finite(mark.feesSinceLastUsd) ? Math.max(0, Number(mark.feesSinceLastUsd)) : null;
   const noFeeCount = feesDelta == null || feesDelta <= 0 ? Number(previous.noFeeCount ?? 0) + 1 : 0;
   const ageMs = now - Number(mark.openedAtMs ?? previous.openedAtMs ?? now);
-  const netPnlUsd = Number(mark.inventoryPnlUsd ?? 0) + feesAccruedUsd -
-    Number(mark.roundTripCostUsd ?? 0) - Number(mark.closeCostUsd ?? 0);
   const feesAccruedUsd = finite(mark.feesAccruedUsd)
     ? Math.max(0, Number(mark.feesAccruedUsd))
     : Number(previous.feesAccruedUsd ?? 0) + Math.max(0, Number(feesDelta ?? 0));
+  const netPnlUsd = Number(mark.inventoryPnlUsd ?? 0) + feesAccruedUsd -
+    Number(mark.roundTripCostUsd ?? 0) - Number(mark.closeCostUsd ?? 0);
   const state = {
     timestampMs: now,
     openedAtMs: Number(mark.openedAtMs ?? previous.openedAtMs ?? now),
@@ -384,10 +391,10 @@ export function evaluateZapPositionMark(mark, previous = {}, config = {}) {
     noFeeCount
   };
   if (!inRange) return { action: 'close-and-rotate', reason: 'out-of-range-on-five-minute-mark', inRange, netPnlUsd, state };
-  if (nearEdge) return { action: 'prepare-close', reason: 'price-near-range-edge', inRange, netPnlUsd, state };
   if (noFeeCount >= settings.noFeeIntervalsToExit) {
     return { action: 'close-and-rotate', reason: 'fee-growth-stalled-for-three-marks', inRange, netPnlUsd, state };
   }
+  if (nearEdge) return { action: 'prepare-close', reason: 'price-near-range-edge', inRange, netPnlUsd, state };
   if (ageMs >= settings.maxStagnantPositionMs && feesDelta != null && feesDelta <= 0) {
     return { action: 'close-and-rotate', reason: 'position-stagnant-six-hours', inRange, netPnlUsd, state };
   }
