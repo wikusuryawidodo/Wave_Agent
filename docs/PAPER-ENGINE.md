@@ -104,7 +104,7 @@ Rank candidates by 24h volume, 1h volume velocity versus the 24h hourly average,
 
 ### One-token funding modes
 
-- **Quote/stable zap in-range:** input only an explicitly allowlisted quote asset (e.g. USDG or WETH). Require a fresh read-only router quote for the exact input/output mint, price impact <=50 bps, auto-balance residual <=5%, expected output and minimum output. The quoted route is expected to convert part of the input asset so the position is two-sided and in-range immediately. If no approved zap quote exists, reject the candidate.
+- **Quote/stable zap in-range:** input only an explicitly allowlisted quote asset (e.g. USDG or WETH; WETH is volatile and is not treated as a stablecoin). Require a fresh read-only router quote for the exact input/output mint, price impact <=50 bps, auto-balance residual <=5%, expected output and minimum output. The quoted route is expected to convert part of the input asset so the position is two-sided and in-range immediately. If no approved zap quote exists, reject the candidate.
 - **Directional single-sided range:** a token-only position is placed fully above spot for bullish direction or fully below spot for bearish direction. It is not an active fee-farming position while price remains outside the range. Require an SDK read-only one-sided composition quote for the exact mint before treating the plan as viable. Directional inventory risk and missed fee opportunity must be included; this is closer to a range order than immediate stable-yield farming.
 
 The implementation does not assume that a generic one-token input magically becomes two-sided. The \`stable-zap-inrange\` flow needs integration with a router or platform that returns a verifiable quote. Meteora's DLMM instruction set supports \`add_liquidity*\` flows including one-sided parameters, and has separate swap instructions; however, constructing a zap requires quoting and sizing the required swap as well as the LP deposit. No zap transaction is built or sent by this repo.
@@ -115,7 +115,7 @@ The implementation does not assume that a generic one-token input magically beco
 - Normal trending token profile: ±15%.
 - High-volatility profile: ±30–50%, calculated as \`clamp(2.5 × volatility24hPct, 30, 50)\`.
 
-These are starting presets, not universal optimal ranges. The high-volatility preset does not waive the 14-day pair-age and token-security restrictions. For a new listing, observe it until it passes maturity and security gates rather than using a wider band as a substitute for due diligence.
+These are starting presets, not universal optimal ranges. The high-volatility preset does not waive the 14-day pair-age and token-security restrictions. For a new listing, observe it until it passes maturity and security gates rather than using a wider band as a substitute for due diligence. Tokenized-stock candidates additionally require the exact target mint to be in the configured issuer allowlist and a fresh `assetVerification` record with `source=issuer-allowlist`.
 
 For directional single-sided ranges, the range is placed fully beyond spot with a volatility-dependent activation buffer. It does not earn swap fees until price trades into that range. This is distinct from stable-only zap into a range that already contains spot.
 
