@@ -354,8 +354,7 @@ export function evaluateTrendingZapCandidate(snapshot, {
       intervalMs: config.monitorIntervalMs,
       nearEdgeFraction: config.nearEdgeFraction,
       outOfRangePolicy: 'exit-on-first-confirmed-5m-mark',
-      noFeeIntervalsToExit: config.noFeeIntervalsToExit,
-      maxStagnantPositionMs: config.maxStagnantPositionMs
+      noFeeIntervalsToExit: config.noFeeIntervalsToExit
     },
     paperOnly: true,
     executionEnabled: false
