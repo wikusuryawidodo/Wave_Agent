@@ -35,6 +35,12 @@ The inventory PnL fallback is a simplified concentrated-liquidity approximation,
 
 The entry engine does not count liquidity-mining reward emissions as trading fees. Rewards are tracked separately because they depend on eligible active bins, claimability and reward-token value. The fee forecast uses position-specific fee APR for the proposed range, not the whole-pool TVL APR, and must clear the net-edge and coverage thresholds documented in [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md). Use `npm run paper:fee-analysis` to replay the deterministic fee-vs-inventory-drag sensitivity cases. This is a model sensitivity check, not historic strategy performance.
 
+## Install GMGN CLI for GitHub Actions
+
+The official `gmgn-cli` is pinned as a repository npm dependency. To configure it securely for GitHub Actions, follow [docs/GMGN-INSTALL.md](docs/GMGN-INSTALL.md). The setup requires two GitHub Actions secrets, `GMGN_API_KEY` and the matching `GMGN_KEYPAIR_PEM`. Never commit the generated key-pair file or the CLI's local config.
+
+After the PR is merged into the default branch, run **Actions → GMGN CLI read-only smoke test** to install/configure the CLI on an ephemeral runner and fetch a small Trending response. This is a manual, read-only check; it does not submit trades, swaps or LP transactions.
+
 ## GMGN trending and FOMO signal boundary
 
 The exported `gmgnCli` adapter executes only documented read-only GMGN CLI commands. Install/update `gmgn-cli`, configure its API key with the official CLI, and ensure `gmgn-cli config --check` succeeds. Then use `gmgnCli.getTrending('sol', { interval: '5m', orderBy: 'volume', limit: 50 })`, `gmgnCli.getSignals('sol', { signalTypes: [12, 13, 6, 7, 20] })`, `gmgnCli.getTrenches(...)`, or `gmgnCli.getHotSearches(...)`. GMGN Trending is ranked by swap activity; Hot Searches measures visitor/search heat; Market Signals are event notifications such as price spikes, smart-money buys, KOL/platform calls, and Dex trending bar. They are distinct feeds.
