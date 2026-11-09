@@ -2,13 +2,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const CHAINS = new Set(['sol', 'bsc', 'base', 'eth', 'robinhood', 'arc', 'stable']);
+const CHAINS = new Set(['sol', 'bsc', 'base', 'eth', 'arbitrum', 'hyperevm', 'robinhood', 'arc', 'stable', 'avalanche']);
 const INTERVALS = new Set(['1m', '5m', '1h', '6h', '24h']);
-const SIGNAL_TYPES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21]);
+const SIGNAL_TYPES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
 const ORDER_BY = new Set([
-  'default', 'swaps', 'marketcap', 'history_highest_market_cap', 'liquidity',
-  'volume', 'holder_count', 'smart_degen_count', 'renowned_count', 'gas_fee',
-  'price', 'change1m', 'change5m', 'change1h', 'creation_timestamp'
+  'volume', 'swaps', 'liquidity', 'marketcap', 'holders', 'price', 'change',
+  'change1m', 'change5m', 'change1h', 'renowned_count', 'smart_degen_count',
+  'bluechip_owner_percentage', 'rank', 'creation_timestamp',
+  'square_mentions', 'history_highest_market_cap', 'gas_fee'
 ]);
 
 function requiredChoice(name, value, allowed) {
@@ -111,23 +112,22 @@ export function createGmgnCliReadOnlyProvider({
       return market(args);
     },
     async getSignals(chain, {
-      signalTypes = [12, 13, 6, 7, 20],
+      signalTypes = [4, 6, 12, 13, 20],
       marketCapMin,
       marketCapMax,
       triggerMarketCapMin,
       triggerMarketCapMax,
       totalFeeMin,
-      totalFeeMax,
-      limit = 50
+      totalFeeMax
     } = {}) {
-      if (!['sol', 'bsc', 'robinhood', 'arc', 'stable'].includes(chain)) {
+      if (!['sol', 'bsc', 'base', 'eth', 'arbitrum', 'avalanche', 'robinhood', 'arc', 'stable'].includes(chain)) {
         throw new Error('Unsupported GMGN signal chain: ' + chain);
       }
       if (!Array.isArray(signalTypes) || signalTypes.length === 0 ||
           signalTypes.some(type => !Number.isInteger(type) || !SIGNAL_TYPES.has(type))) {
         throw new Error('signalTypes must use documented types; do not request 14, 15 or 16');
       }
-      const args = ['signal', '--chain', chain, '--limit', checkedLimit(limit, 50)];
+      const args = ['signal', '--chain', chain];
       for (const type of signalTypes) args.push('--signal-type', String(type));
       const mapped = [
         ['--mc-min', marketCapMin], ['--mc-max', marketCapMax],
@@ -144,43 +144,19 @@ export function createGmgnCliReadOnlyProvider({
     async getTrenches(chain, {
       types = ['completed'],
       limit = 50,
-      filterPreset = 'safe',
-      sortBy = 'volume_24h',
-      direction = 'desc',
-      platforms = [],
-      filters = {}
+      platforms = []
     } = {}) {
       requiredChoice('chain', chain, CHAINS);
       const allowedTypes = new Set(['new_creation', 'near_completion', 'completed']);
       if (!Array.isArray(types) || !types.length || types.some(type => !allowedTypes.has(type))) {
-        throw new Error('Invalid trenches types');
+        throw new Error('types must contain new_creation, near_completion or completed');
       }
-      if (!['safe', 'smart-money', 'strict', ''].includes(filterPreset)) throw new Error('Invalid trenches filter preset');
-      if (!['smart_degen_count', 'renowned_count', 'volume_24h', 'volume_1h', 'swaps_24h', 'swaps_1h', 'rug_ratio', 'holder_count', 'usd_market_cap', 'created_timestamp'].includes(sortBy)) {
-        throw new Error('Invalid trenches sort field');
+      if (!Array.isArray(platforms) || platforms.some(x => typeof x !== 'string' || !x.trim())) {
+        throw new Error('platforms must be non-empty strings');
       }
-      if (!['asc', 'desc'].includes(direction)) throw new Error('direction must be asc or desc');
-      if (!Array.isArray(platforms)) throw new Error('platforms must be an array');
-      const args = ['trenches', '--chain', chain, '--limit', checkedLimit(limit, 80),
-        '--filter-preset', filterPreset, '--sort-by', sortBy, '--direction', direction];
+      const args = ['trenches', '--chain', chain, '--limit', checkedLimit(limit, 80)];
       for (const type of types) args.push('--type', type);
-      for (const platform of platforms) {
-        if (typeof platform !== 'string' || !platform.trim()) throw new Error('platforms must contain non-empty strings');
-        args.push('--launchpad-platform', platform);
-      }
-      const flags = {
-        minMarketcap: '--min-marketcap', maxMarketcap: '--max-marketcap',
-        minVolume24h: '--min-volume-24h', minSmartDegenCount: '--min-smart-degen-count',
-        maxRugRatio: '--max-rug-ratio', maxBundlerRate: '--max-bundler-rate',
-        maxInsiderRatio: '--max-insider-ratio', maxCreated: '--max-created'
-      };
-      for (const [key, value] of Object.entries(filters)) {
-        const flag = flags[key];
-        if (!flag) throw new Error('Unsupported GMGN trenches filter: ' + key);
-        if (key === 'maxCreated') checkedDuration(key, value);
-        else checkedNonNegative(key, value);
-        args.push(flag, String(value));
-      }
+      for (const platform of platforms) args.push('--launchpad-platform', platform);
       return market(args);
     },
     async getHotSearches({
