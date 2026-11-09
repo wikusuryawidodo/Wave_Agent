@@ -23,7 +23,7 @@ export function rankGmgnDiscoveryTokens(items, {
   if (!Number.isFinite(now)) throw new Error('now must be a timestamp in milliseconds');
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be 1..100');
 
-  return items.map(item => {
+  return items.map((item, itemIndex) => {
     const failures = [];
     const address = String(item.address ?? '').trim();
     const chain = String(item.chain ?? '').trim();
@@ -41,6 +41,7 @@ export function rankGmgnDiscoveryTokens(items, {
     const smartMoney = Number(item.smart_degen_count ?? 0);
     const renowned = Number(item.renowned_count ?? 0);
     const hotLevel = Number(item.hot_level ?? 0);
+    const rankPosition = Number(item.rank);
     const priceChangePct = Number(item.price_change_percent ?? item.price_change_percent1h ?? 0);
     const buys = Number(item.buys ?? 0);
     const sells = Number(item.sells ?? 0);
@@ -57,6 +58,7 @@ export function rankGmgnDiscoveryTokens(items, {
     if (!finite(item.top_10_holder_rate) || top10 > maxTop10HolderRate || top10 < 0) failures.push('top-10 concentration too high or unavailable');
     if (!finite(item.rat_trader_amount_rate) || insider > maxInsiderRate || insider < 0) failures.push('insider trading ratio too high or unavailable');
     if (!finite(item.bundler_rate) || bundler > maxBundlerRate || bundler < 0) failures.push('bundler ratio too high or unavailable');
+    if (smartMoney < minSmartDegenCount) failures.push('smart-money holder count below minimum');
     if (!finite(item.price_change_percent ?? item.price_change_percent1h) || priceChangePct > maxPriceChangePercent) {
       failures.push('price move too extended or unavailable');
     }
@@ -65,7 +67,10 @@ export function rankGmgnDiscoveryTokens(items, {
     const volumeScore = clamp(Math.log10(Math.max(volumeUsd, 1)) / 7, 0, 1);
     const smartScore = clamp(smartMoney / 5, 0, 1);
     const renownedScore = clamp(renowned / 5, 0, 1);
-    const hotScore = clamp(hotLevel / 100, 0, 1);
+    // GMGN explicitly says hot_level is not normalized; use within-result rank instead.
+    const listRankScore = finite(rankPosition)
+      ? 1 - clamp((rankPosition - 1) / Math.max(items.length - 1, 1), 0, 1)
+      : 1 - itemIndex / Math.max(items.length - 1, 1);
     const momentumScore = clamp((priceChangePct + 20) / 80, 0, 1);
     const safetyScore = clamp(
       1 - (Math.max(0, rugRatio) / Math.max(maxRugRatio, 0.001)) * 0.35 -
@@ -77,7 +82,7 @@ export function rankGmgnDiscoveryTokens(items, {
       0.25 * volumeScore +
       0.20 * smartScore +
       0.10 * renownedScore +
-      0.10 * hotScore +
+      0.10 * listRankScore +
       0.10 * momentumScore +
       0.25 * safetyScore
     ));
