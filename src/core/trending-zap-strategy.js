@@ -143,6 +143,36 @@ function validateZapQuote(zapQuote, { inputMint, outputMint, now, config }) {
   return failures;
 }
 
+
+/** Directional one-sided range is deliberately placed fully beyond spot. */
+export function chooseDirectionalSingleSidedRange({ price, volatility24hPct, direction, assetProfile = 'trending' } = {}) {
+  if (!['bullish', 'bearish'].includes(direction)) throw new Error('direction must be bullish or bearish');
+  const balanced = chooseTrendingZapRange({ price, volatility24hPct, assetProfile });
+  const widthPct = balanced.halfWidthPct * 2;
+  const bufferPct = clamp(Number(volatility24hPct) * 0.25, 0.75, 3);
+  const spot = Number(price);
+  const lower = direction === 'bullish'
+    ? spot * (1 + bufferPct / 100)
+    : spot * (1 - (bufferPct + widthPct) / 100);
+  const upper = direction === 'bullish'
+    ? spot * (1 + (bufferPct + widthPct) / 100)
+    : spot * (1 - bufferPct / 100);
+  return {
+    assetProfile,
+    direction,
+    widthPct,
+    bufferPct,
+    lower,
+    upper,
+    currentPrice: spot,
+    startsOutOfRange: true,
+    feesActiveImmediately: false,
+    activationCondition: direction === 'bullish'
+      ? 'spot trades up to the lower boundary'
+      : 'spot trades down to the upper boundary'
+  };
+}
+
 /**
  * Paper-only evaluation for the trending + zap strategy.
  * It only creates a proposed plan; it never constructs or broadcasts a transaction.
@@ -206,7 +236,9 @@ export function evaluateTrendingZapCandidate(snapshot, {
   const currentPrice = Number(snapshot.priceUsd ?? snapshot.activeBinPrice ?? 0);
   let range;
   try {
-    range = chooseTrendingZapRange({ price: currentPrice, volatility24hPct: Number(pool.volatility24hPct), assetProfile });
+    range = fundingMode === 'directional-single-sided'
+      ? chooseDirectionalSingleSidedRange({ price: currentPrice, volatility24hPct: Number(pool.volatility24hPct), assetProfile, direction })
+      : chooseTrendingZapRange({ price: currentPrice, volatility24hPct: Number(pool.volatility24hPct), assetProfile });
   } catch (error) {
     return fail(error.message);
   }
@@ -340,11 +372,15 @@ export function evaluateZapPositionMark(mark, previous = {}, config = {}) {
   const feesDelta = finite(mark.feesSinceLastUsd) ? Math.max(0, Number(mark.feesSinceLastUsd)) : null;
   const noFeeCount = feesDelta == null || feesDelta <= 0 ? Number(previous.noFeeCount ?? 0) + 1 : 0;
   const ageMs = now - Number(mark.openedAtMs ?? previous.openedAtMs ?? now);
-  const netPnlUsd = Number(mark.inventoryPnlUsd ?? 0) + Number(mark.feesAccruedUsd ?? 0) -
+  const netPnlUsd = Number(mark.inventoryPnlUsd ?? 0) + feesAccruedUsd -
     Number(mark.roundTripCostUsd ?? 0) - Number(mark.closeCostUsd ?? 0);
+  const feesAccruedUsd = finite(mark.feesAccruedUsd)
+    ? Math.max(0, Number(mark.feesAccruedUsd))
+    : Number(previous.feesAccruedUsd ?? 0) + Math.max(0, Number(feesDelta ?? 0));
   const state = {
     timestampMs: now,
     openedAtMs: Number(mark.openedAtMs ?? previous.openedAtMs ?? now),
+    feesAccruedUsd,
     noFeeCount
   };
   if (!inRange) return { action: 'close-and-rotate', reason: 'out-of-range-on-five-minute-mark', inRange, netPnlUsd, state };
