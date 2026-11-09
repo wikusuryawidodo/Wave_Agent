@@ -1,15 +1,12 @@
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
 function requiredPositive(name, value) {
   const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) throw new Error(`${name} must be positive`);
+  if (!Number.isFinite(number) || number <= 0) throw new Error(name + ' must be positive');
   return number;
 }
 
 /**
- * Conservative fee-edge estimate for a DLMM LP candidate.
- * Fee APR uses the lower of observed 24h and trailing-7d annualizations.
- * Inventory stress/drag values must be supplied by the bin-risk simulator.
+ * Evaluates the return on the candidate LP position, not pool-level headline APR.
+ * positionFeeApr values must be produced by a range-specific, per-bin fee-share replay.
  */
 export function assessLpEconomics({
   tvlUsd,
@@ -17,6 +14,8 @@ export function assessLpEconomics({
   volume24hUsd,
   fees24hUsd,
   fees7dUsd,
+  positionFeeApr24hPct,
+  positionFeeApr7dPct,
   allocationUsd,
   volatility24hPct,
   liquidityTrend24hPct,
@@ -25,71 +24,115 @@ export function assessLpEconomics({
   roundTripCostBps = 30,
   feeCaptureShare = 0.65,
   expectedHoldHours = 168,
-  minFeeApr7dPct = 35,
-  minFeeApr24hPct = 20,
-  minNetEdgePct = 0.1,
+  minPoolFeeApr7dPct = 60,
+  minPoolFeeApr24hPct = 50,
+  minPositionFeeApr7dPct = 150,
+  minPositionFeeApr24hPct = 120,
+  minNetEdgePct = 1.0,
+  minFeeCoverageRatio = 2.0,
   maxFeeSpikeRatio = 2.5,
   minActiveTvlRatio = 0.3,
   minVolumeToActiveTvl = 0.2,
-  maxVolumeToActiveTvl = 5,
-  maxVolatility24hPct = 8,
+  maxVolumeToActiveTvl = 4.5,
+  maxVolatility24hPct = 7,
   maxStressLossPct = 8,
+  maxInventoryDragPct7d = 1.0,
   maxLiquidityOutflowPct = -8
 } = {}) {
   const totalTvl = requiredPositive('tvlUsd', tvlUsd);
   const activeTvl = requiredPositive('activeTvlUsd', activeTvlUsd);
   const volume = requiredPositive('volume24hUsd', volume24hUsd);
+  const allocation = requiredPositive('allocationUsd', allocationUsd);
   const fees24h = Number(fees24hUsd);
   const fees7d = Number(fees7dUsd);
-  const allocation = requiredPositive('allocationUsd', allocationUsd);
+  const positionFee24h = Number(positionFeeApr24hPct);
+  const positionFee7d = Number(positionFeeApr7dPct);
   const volatility = Number(volatility24hPct);
   const liquidityTrend = Number(liquidityTrend24hPct);
   const stress = Number(stressLossPct);
   const inventoryDrag = Number(expectedInventoryDragPct);
 
-  if (![fees24h, fees7d, volatility, liquidityTrend, stress, inventoryDrag].every(Number.isFinite) ||
-      fees24h < 0 || fees7d <= 0 || volatility < 0 || stress < 0 || inventoryDrag < 0) {
-    throw new Error('Fee, volatility, liquidity trend and bin-risk inputs must be valid');
+  if (![fees24h, fees7d, positionFee24h, positionFee7d, volatility, liquidityTrend, stress, inventoryDrag].every(Number.isFinite) ||
+      fees24h < 0 || fees7d <= 0 || positionFee24h < 0 || positionFee7d <= 0 ||
+      volatility < 0 || stress < 0 || inventoryDrag < 0) {
+    throw new Error('Pool fees, position fee APR, volatility, liquidity trend and bin-risk inputs must be valid');
   }
   if (activeTvl > totalTvl * 1.001) throw new Error('activeTvlUsd cannot exceed total tvlUsd');
   if (!(feeCaptureShare > 0 && feeCaptureShare <= 1)) throw new Error('feeCaptureShare must be within (0,1]');
+  if (!(expectedHoldHours > 0 && expectedHoldHours <= 24 * 30)) throw new Error('expectedHoldHours must be >0 and <=30 days');
 
-  const feeApr24hPct = fees24h / activeTvl * 365 * 100;
-  const feeApr7dPct = (fees7d / 7) / activeTvl * 365 * 100;
-  const conservativeFeeAprPct = Math.min(feeApr24hPct, feeApr7dPct);
-  const feeStabilityRatio = fees24h / (fees7d / 7);
+  // Whole-pool APR is a liquidity/market sanity check only, never the LP's forecast.
+  const poolFeeApr24hPct = fees24h / activeTvl * 365 * 100;
+  const poolFeeApr7dPct = (fees7d / 7) / activeTvl * 365 * 100;
+  const poolFeePaceRatio = fees24h / (fees7d / 7);
   const activeTvlRatio = activeTvl / totalTvl;
   const volumeToActiveTvl = volume / activeTvl;
-  const expectedFeesPct = conservativeFeeAprPct * expectedHoldHours / 8760 * feeCaptureShare;
+
+  // The candidate position's fee APR is based on simulated fee growth and the LP's
+  // liquidity share in every bin traversed by historical/replayed swaps.
+  const conservativePositionFeeAprPct = Math.min(positionFee24h, positionFee7d);
+  const positionFeePaceRatio = positionFee24h / positionFee7d;
+  const grossPositionFeesPct = conservativePositionFeeAprPct * expectedHoldHours / 8760 * feeCaptureShare;
   const roundTripCostPct = roundTripCostBps / 100;
-  const expectedNetEdgePct = expectedFeesPct - roundTripCostPct - inventoryDrag;
+  const allInDragPct = roundTripCostPct + inventoryDrag;
+  const expectedNetEdgePct = grossPositionFeesPct - allInDragPct;
+  const feeCoverageRatio = allInDragPct > 0 ? grossPositionFeesPct / allInDragPct : Infinity;
+  const requiredPositionFeeAprPct =
+    (minNetEdgePct + allInDragPct) * 8760 / (expectedHoldHours * feeCaptureShare);
+  const expectedFeesUsd = allocation * grossPositionFeesPct / 100;
+  const expectedInventoryDragUsd = allocation * inventoryDrag / 100;
+  const estimatedRoundTripCostUsd = allocation * roundTripCostPct / 100;
 
   const hardFails = [];
   if (activeTvlRatio < minActiveTvlRatio) hardFails.push('active liquidity share too low');
-  if (volumeToActiveTvl < minVolumeToActiveTvl || volumeToActiveTvl > maxVolumeToActiveTvl) hardFails.push('volume/active-TVL outside healthy band');
-  if (feeApr7dPct < minFeeApr7dPct) hardFails.push('7d active-liquidity fee APR too low');
-  if (feeApr24hPct < minFeeApr24hPct) hardFails.push('24h active-liquidity fee APR too low');
-  if (feeStabilityRatio < 0.5 || feeStabilityRatio > maxFeeSpikeRatio) hardFails.push('24h fee pace unstable versus 7d baseline');
+  if (volumeToActiveTvl < minVolumeToActiveTvl || volumeToActiveTvl > maxVolumeToActiveTvl) {
+    hardFails.push('volume/active-TVL outside healthy band');
+  }
+  if (poolFeeApr7dPct < minPoolFeeApr7dPct) hardFails.push('7d whole-pool active-TVL fee APR too low');
+  if (poolFeeApr24hPct < minPoolFeeApr24hPct) hardFails.push('24h whole-pool active-TVL fee APR too low');
+  if (poolFeePaceRatio < 0.5 || poolFeePaceRatio > maxFeeSpikeRatio) {
+    hardFails.push('whole-pool 24h fee pace unstable versus 7d baseline');
+  }
+  if (positionFee7d < minPositionFeeApr7dPct) hardFails.push('simulated position 7d bin-fee APR too low');
+  if (positionFee24h < minPositionFeeApr24hPct) hardFails.push('simulated position 24h bin-fee APR too low');
+  if (positionFeePaceRatio < 0.5 || positionFeePaceRatio > maxFeeSpikeRatio) {
+    hardFails.push('position-specific fee pace unstable versus 7d baseline');
+  }
   if (volatility > maxVolatility24hPct) hardFails.push('24h volatility too high for balanced LP range');
   if (stress > maxStressLossPct) hardFails.push('bin stress loss exceeds risk ceiling');
+  if (inventoryDrag > maxInventoryDragPct7d) hardFails.push('7d expected inventory loss exceeds ceiling');
   if (liquidityTrend < maxLiquidityOutflowPct) hardFails.push('pool liquidity outflow too severe');
-  if (expectedNetEdgePct < minNetEdgePct) hardFails.push('expected net fee edge does not cover costs and inventory drag');
+  if (feeCoverageRatio < minFeeCoverageRatio) hardFails.push('projected position fees do not cover inventory loss plus costs by required multiple');
+  if (expectedNetEdgePct < minNetEdgePct) hardFails.push('projected net fee return below minimum hurdle');
 
   return {
     eligible: hardFails.length === 0,
     hardFails,
-    feeApr24hPct,
-    feeApr7dPct,
-    conservativeFeeAprPct,
-    feeStabilityRatio,
-    activeTvlRatio,
-    volumeToActiveTvl,
-    expectedFeesPct,
+    poolFeeApr24hPct,
+    poolFeeApr7dPct,
+    poolFeePaceRatio,
+    positionFeeApr24hPct: positionFee24h,
+    positionFeeApr7dPct: positionFee7d,
+    conservativePositionFeeAprPct,
+    positionFeePaceRatio,
+    grossPositionFeesPct,
     roundTripCostPct,
     expectedInventoryDragPct: inventoryDrag,
+    allInDragPct,
     expectedNetEdgePct,
+    feeCoverageRatio,
+    requiredPositionFeeAprPct,
+    expectedFeesUsd,
+    expectedInventoryDragUsd,
+    estimatedRoundTripCostUsd,
     stressLossPct: stress,
-    assumptions: { feeCaptureShare, expectedHoldHours, roundTripCostBps }
+    assumptions: {
+      feeCaptureShare,
+      expectedHoldHours,
+      roundTripCostBps,
+      minNetEdgePct,
+      minFeeCoverageRatio
+    }
   };
 }
 
