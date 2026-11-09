@@ -123,7 +123,7 @@ test('V3 subgraph adapter maps daily metrics without treating lifetime fees as d
 test('GMGN provider fails closed without an approved endpoint and key', async () => {
   const p=createGmgnReadOnlyProvider({url:'',apiKey:''});
   assert.equal(p.enabled,false);
-  await assert.rejects(p.getMarket('sol','mint'),/obtain an API key/);
+  await assert.rejects(p.getMarket('sol','mint'),/GMGN Skills\/MCP bridge is not configured/);
 });
 
 import { allocateAcrossObservedBins, markToMarketDlmmPosition, sumClaimablePositionFees } from '../src/core/dlmm-simulator.js';
