@@ -20,6 +20,7 @@ See [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md) for risk math, snapshot fields,
 - Helius: read-only Solana JSON-RPC, public wallet log subscription, DAS asset reads and Enhanced Transactions query adapter.
 - Meteora: official DLMM SDK adapter for active bin, fee info and surrounding bin state; public Data API adapter for pool discovery and historical data.
 - AI: OpenRouter first, optional OpenAI API fallback. AI runs as an analyst and is advisory only; it cannot authorize, veto, resize or close a position.
+- GMGN: official CLI read-only adapter for Trending (1m/5m/1h/6h/24h), Trenches, Market Signals and Hot Searches; discovery scorer uses rug ratio, wash trading, smart-money counts, volume, liquidity, market cap and age.
 - Pair data: read-only DexScreener enrichment for pair creation time, market cap, FDV, liquidity, price change and 24h buy/sell activity. Exact pair-address + mint matching is required.
 - Paper engine: deterministic wallet-convergence, token/pair safety, fee-edge economics, multi-timeframe market gate, stress-based sizing and dynamic LP exits.
 - Backtest: snapshot-based backtest and DLMM bin simulation helpers.
@@ -33,6 +34,14 @@ The inventory PnL fallback is a simplified concentrated-liquidity approximation,
 ## Fee farming and inventory-loss filter
 
 The entry engine does not count liquidity-mining reward emissions as trading fees. Rewards are tracked separately because they depend on eligible active bins, claimability and reward-token value. The fee forecast uses position-specific fee APR for the proposed range, not the whole-pool TVL APR, and must clear the net-edge and coverage thresholds documented in [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md). Use `npm run paper:fee-analysis` to replay the deterministic fee-vs-inventory-drag sensitivity cases. This is a model sensitivity check, not historic strategy performance.
+
+## GMGN trending and FOMO signal boundary
+
+The exported `gmgnCli` adapter executes only documented read-only GMGN CLI commands. Install/update `gmgn-cli`, configure its API key with the official CLI, and ensure `gmgn-cli config --check` succeeds. Then use `gmgnCli.getTrending('sol', { interval: '5m', orderBy: 'volume', limit: 50 })`, `gmgnCli.getSignals('sol', { signalTypes: [12, 13, 6, 7, 20] })`, `gmgnCli.getTrenches(...)`, or `gmgnCli.getHotSearches(...)`. GMGN Trending is ranked by swap activity; Hot Searches measures visitor/search heat; Market Signals are event notifications such as price spikes, smart-money buys, KOL/platform calls, and Dex trending bar. They are distinct feeds.
+
+The separate Fomo Thesis and Fomo Top chart markers are not exposed as fields in the documented GMGN CLI Market Signal feed. Fomo Thesis is a social post from FOMO; Fomo Top is a FOMO-indexed wallet transfer marker and a transfer-in is not proof of a buy. Do not treat these as confirmed LP adds or entry signals. A future FOMO integration would need its own supported data provider and wallet/event verification.
+
+GMGN token discovery does not identify the exact Meteora LB pair or position-specific fee yield by itself. Resolve token mint to exact Meteora pool(s), then apply pair-age, pair liquidity, token security, bin fee replay, inventory drag and zap quote checks. GMGN's rug/wash/holder fields are an extra research layer, not a substitute for independent safety checks.
 
 ## Trending + one-token zap research mode
 
