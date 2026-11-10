@@ -128,7 +128,7 @@ function uniqueVerifiedWalletEvents(signals, now, config, poolAddress, eventType
         signal.programId !== config.meteoraProgramId ||
         signal.poolAddress !== poolAddress ||
         signal.quoteSide !== true ||
-        !signature || !Number.isInteger(index) || seenInstructions.has(id) ||
+        !signature || !Number.isInteger(index) || index < 0 || innerIndex < 0 || seenInstructions.has(id) ||
         !Number.isFinite(time) || time > now || now - time > config.walletWindowMs ||
         !isFiniteNumber(signal.quoteAmountUsd) || Number(signal.quoteAmountUsd) < config.minWalletDepositUsd) continue;
     if (config.requireRankedWallets &&
