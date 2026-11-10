@@ -368,7 +368,7 @@ export class PaperTradingEngine {
       }
     }
 
-    const lpRisk = snapshot.lpRisk ?? {});
+    const lpRisk = snapshot.lpRisk ?? {};
     if (lpRisk.verified !== true || lpRisk.source !== 'meteora-bin-stress-simulator') {
       return fail('verified bin-level LP stress simulation required');
     }
