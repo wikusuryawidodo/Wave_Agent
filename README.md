@@ -22,7 +22,8 @@ See [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md) for risk math, snapshot fields,
 - AI: OpenRouter first, optional OpenAI API fallback. AI runs as an analyst and is advisory only; it cannot authorize, veto, resize or close a position.
 - GMGN: official CLI read-only adapter for Trending (1m/5m/1h/6h/24h), Trenches, Market Signals and Hot Searches; discovery scorer uses rug ratio, wash trading, smart-money counts, volume, liquidity, market cap and age.
 - Pair data: read-only DexScreener enrichment for pair creation time, market cap, FDV, liquidity, price change and 24h buy/sell activity. Exact pair-address + mint matching is required.
-- Paper engine: deterministic wallet-convergence, token/pair safety, fee-edge economics, multi-timeframe market gate, stress-based sizing and dynamic LP exits.
+- Token intelligence: read-only Jupiter asset audit adapter and optional operator-trusted top-LP wallet performance index. The index is not trusted unless `TOP_LP_WALLET_INDEX_TRUSTED=true` is set locally.
+- Paper engine: ranked LP wallet convergence, 24h wallet-flow analysis, Jupiter token audit enrichment, pair/pool safety, position-specific fee-vs-inventory economics, multi-timeframe market analysis, stress-sized positions, asymmetric rebalance ladder and persistent read-only runtime.
 - Backtest: snapshot-based backtest and DLMM bin simulation helpers.
 
 ## Important integration boundary
