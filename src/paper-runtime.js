@@ -25,7 +25,6 @@ if (snapshotProvider?.readOnly !== true || typeof snapshotProvider.getSnapshots 
   throw new Error('Snapshot provider must be explicitly read-only and implement getSnapshots()');
 }
 
-const ai = { available: [] };
 const engineConfig = {
   strategy: config.strategy,
   riskPerPositionPct: config.maxRiskPerPositionPct,
