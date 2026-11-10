@@ -122,7 +122,8 @@ function uniqueVerifiedWalletEvents(signals, now, config, poolAddress, eventType
     const wallet = String(signal.walletGroup ?? signal.walletAddress ?? '').trim();
     const signature = String(signal.signature ?? '').trim();
     const index = Number(signal.instructionIndex);
-    const id = signature + ':' + index;
+    const innerIndex = Number.isInteger(Number(signal.innerInstructionIndex)) ? Number(signal.innerInstructionIndex) : -1;
+    const id = signature + ':' + index + ':' + innerIndex;
     if (!wallet || signal.eventType !== eventType ||
         signal.verified !== true || signal.success !== true ||
         signal.programId !== config.meteoraProgramId ||
@@ -141,6 +142,7 @@ function uniqueVerifiedWalletEvents(signals, now, config, poolAddress, eventType
         wallet,
         signature,
         instructionIndex: index,
+        innerInstructionIndex: innerIndex,
         timestamp: time,
         quoteAmountUsd: Number(signal.quoteAmountUsd),
         walletRankScore: Number(signal.walletRankScore)
