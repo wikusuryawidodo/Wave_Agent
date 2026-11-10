@@ -19,6 +19,7 @@ export const config = Object.freeze({
   rebalanceQuoteMaxAgeSec: Number(process.env.REBALANCE_QUOTE_MAX_AGE_SEC ?? 30),
   minWalletRankScore: Number(process.env.MIN_WALLET_RANK_SCORE ?? 65),
   requireRankedWallets: process.env.REQUIRE_RANKED_LP_WALLETS !== 'false',
+  requireWalletActivity: process.env.REQUIRE_WALLET_ACTIVITY !== 'false',
   maxTvlUsd: Number(process.env.MAX_TVL_USD ?? 150_000),
   maxMarketCapUsd: Number(process.env.MAX_MARKET_CAP_USD ?? 10_000_000),
   minOrganicScore: Number(process.env.MIN_ORGANIC_SCORE ?? 60),
