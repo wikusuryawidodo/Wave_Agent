@@ -15,6 +15,8 @@ export { rankTopLpWallets, enrichWalletEvent, summarizeWalletActivity } from './
 export { evaluateAsymmetricRebalance, ASYMMETRIC_REBALANCE_LEVELS_PCT } from './core/asymmetric-rebalance.js';
 export { createMeteoraWalletActivityAdapter, decodeMeteoraLiquidityEvents } from './adapters/meteora-wallet-activity.js';
 export { createMeteoraPnLReadOnlyAdapter } from './adapters/meteora-pnl-readonly.js';
+export { createJupiterTokenScreeningAdapter } from './adapters/jupiter-token-screening.js';
+export { createTopLpWalletIndexAdapter } from './adapters/top-lp-wallet-index.js';
 export { createPaperDataBridge } from './adapters/paper-data-bridge.js';
 export { createPaperOrchestrator } from './runtime/paper-orchestrator.js';
 
