@@ -6,8 +6,8 @@ This is an experimental **paper-only LP selection and management model**, not a 
 
 Preset:
 - Entry: **hybrid** — pool fee economics + 5m/30m market confirmation + two distinct, verified Meteora LP-add wallet groups.
-- Style: **balanced LP** — 0.3% equity risk per position, 0.6% aggregate open risk, maximum two positions, maximum 12.5% equity allocation per position.
-- Exit: **dynamic LP** — stress-adjusted hard stop; +2.5% trailing activation with 1 percentage-point giveback; persistent out-of-range; two 30m trend-reversal confirmations; two low-fee confirmations; tracked-wallet withdrawal convergence; 8% net take-profit; and seven-day time stop.
+- Style: **capital-capped LP** — 0.3% equity risk per position and 0.6% aggregate open risk remain independent controls; maximum two positions; 45% maximum capital allocation per position; 90% maximum total capital utilization across positions and rebalances, leaving at least 10% unallocated.
+- Exit: **asymmetric LP** — paper rebalance at -15%, -30%, and -45% spot drawdown from entry; hard stop at -50%; plus +2.5% trailing activation with 1 percentage-point giveback, persistent out-of-range, two 30m trend-reversal confirmations, two low-fee confirmations, tracked-wallet withdrawal convergence, 8% net take-profit, and seven-day time stop.
 - Range: symmetric range whose half-width is derived from ATR and observed 24h volatility. The output is a paper planning range, not a transaction instruction.
 
 ## Entry checklist
@@ -21,9 +21,10 @@ A pool is eligible only when all hard gates pass:
 5. **Pair age and rug/liquidity risk:** exact DEX pair age >=14 days; market cap >=$250k; FDV/market cap <=2.5; pair liquidity >=$50k and >=8% of market cap; at least 50 transactions/24h and 15 sells; sell/buy ratio 0.35–3.5; price change between -18% and +45%. These are conservative screening thresholds, not proof against rugs. Pair evidence must match the exact pool + mint and be <=120 seconds old.
 6. **Volatility and liquidity trend:** 24h realized volatility no more than 7%; liquidity outflow no worse than -8%.
 7. **Token security:** verified metadata; mint and freeze authorities disabled; explicit honeypot=false and scam=false; security snapshot <=300 seconds; top 10 holder concentration <=35%; top 10 dev-wallet concentration <=15%; at least 200 holders; token age >=14 days; token-level market cap >=$250k.
-8. **Market context:** 60 completed candles for both 5m and 30m; data age within configured limits; bullish recursive Supertrend on both timeframes; 30m close above EMA50; 5m MACD bullish; 5m RSI 42–65; 30m ADX 8–30; 5m volume ratio 0.8–3.5; price not excessively extended within the Bollinger envelope.
-9. **Wallet confirmation:** at least two distinct wallet groups add quote-side liquidity to the exact pool within 120 seconds. Each event must be marked verified and successful, include the canonical Meteora DLMM program ID, signature, instruction index, and quote-side USD amount >=$25. The engine rejects unverified events; this flag must only be set by a transaction parser that validates the actual instruction and transaction metadata.
-10. **Bin-level risk simulation:** an independently verified Meteora bin simulator must supply stress loss <=8%, seven-day inventory drag <=1.0%, 24h and 7d position-specific fee APR from the proposed bin distribution, fee model source `meteora-position-v2-bin-fee-replay`, and >=90% simulated range coverage. Without these, the engine deliberately refuses entry.
+8. **Meridian-style token/pool screening:** organic token score >=60; bot-holder rate <=30%; token priority/Jito fee activity >=30 SOL; launchpad allow/block lists; pool TVL $25k–$150k; Meteora bin step 80–125; quote-side organic score >=60; fee/active-TVL ratio >=0.05. Existing stricter token authority, top-holder, pair age and market-cap rules remain in force.
+9. **Market context:** 60 completed candles for both 5m and 30m; data age within configured limits; bullish recursive Supertrend on both timeframes; 30m close above EMA50; 5m MACD bullish; 5m RSI 42–65; 30m ADX 8–30; 5m volume ratio 0.8–3.5; price not excessively extended within the Bollinger envelope.
+10. **Top LP wallet confirmation:** at least two distinct ranked wallet groups add quote-side liquidity to the exact pool within 120 seconds. Wallet rank comes from a fresh trusted `top-lp-wallet-index` record containing closed-position count, realized PnL, fees, win rate, range efficiency and drawdown. Each event must be verified/successful, include canonical Meteora DLMM program ID, signature, instruction index, and quote-side USD amount >=$25. Raw transfer/log activity never qualifies.
+11. **Bin-level risk simulation:** an independently verified Meteora bin simulator must supply stress loss <=8%, seven-day inventory drag <=1.0%, 24h and 7d position-specific fee APR from the proposed bin distribution, fee model source `meteora-position-v2-bin-fee-replay`, and >=90% simulated range coverage. Without these, the engine deliberately refuses entry.
 
 ### Fee-farming hurdle example (7-day horizon)
 
@@ -41,7 +42,7 @@ For a 1.0% net target, 65% fee capture, 168-hour horizon and 30 bps costs, the r
 
 ## Position sizing
 
-Position size is computed from the smaller of the 0.3% single-position equity budget and unused 0.6% portfolio risk budget. The loss denominator is the larger of the planned stop and bin stress loss, plus the 30 bps round-trip cost. Final size is also capped at 12.5% equity and available paper cash.
+Position size is computed from the smaller of the 0.3% single-position equity budget and unused 0.6% portfolio risk budget. The loss denominator is the larger of the planned stop and bin stress loss, plus the 30 bps round-trip cost. Final size is also capped at 45% equity, available cash, and remaining headroom under the 90% portfolio capital-utilization ceiling. Capital utilization is distinct from the loss-risk budget: 90% is an absolute ceiling, not a target. The 10% reserve is never committed to LP positions or rebalance operations.
 
 This is an intended risk budget, not a guaranteed maximum loss. Gaps, stale prices, missing bins and model error can exceed it. A live LP would need execution-specific slippage and exit liquidity modelling.
 
@@ -58,7 +59,7 @@ This is an intended risk budget, not a guaranteed maximum loss. Gaps, stale pric
 - **Time stop:** position is closed after seven days if none of the above triggered.
 - **Cooldown:** the same pool cannot be re-entered for 30 minutes.
 
-The strategy does not automatically rebalance. It paper-closes on exit conditions and requires a new complete entry evaluation before a later paper entry.
+The asymmetric policy watches spot drawdown from entry: -15%, -30%, and -45% each create one rebalance stage; -50% is the hard stop. A rebalance is applied to paper state only after a fresh, verified `read-only-router-quote` matches the exact pool, has <=50 bps impact, <=5% residual imbalance, and a new range containing current price. It reuses existing position inventory and forbids additional capital top-ups/averaging down. Without that quote, the stage remains pending and no range is changed. Actual DLMM remove/swap/add transactions are not sent.
 
 ## Snapshot input contract
 
@@ -178,3 +179,30 @@ The current GMGN CLI adapter therefore does not claim to fetch Fomo Thesis/Fomo 
 3. Rank tokens with \`rankGmgnDiscoveryTokens\`; reject high rug ratio, wash trading and incomplete safety fields.
 4. Resolve each token mint to exact Meteora LB pool(s). A trending token without a verified active pool remains discovery-only.
 5. Recalculate pair age, pair liquidity, market cap/FDV, security, 5m/30m market structure, bin-specific position fee APR, inventory drag and zap quote. GMGN is never sufficient by itself to pass the LP entry gate.
+
+
+## Asymmetric stop and rebalance ladder
+
+Drawdown levels are measured from the entry spot price, not from wallet equity:
+- -15%: first paper range-rebalance stage
+- -30%: second paper range-rebalance stage
+- -45%: third paper range-rebalance stage
+- -50%: hard-stop exit
+
+Each stage can occur only once per position. The engine does not silently change ranges: it requires a matching, fresh quote with `source=read-only-router-quote`, `verified=true`, exact `poolAddress`, `priceImpactBps <= 50`, `residualBalancePct <= 5`, a range containing current price, and `fundingMode=reuse-existing-inventory`. Any non-zero `additionalCapitalUsd` is rejected. In this phase the engine updates only paper state; a future executor must implement remove/swap/add with independent slippage, account, and transaction safeguards.
+
+## Portfolio capital utilization
+
+`maxPortfolioUtilizationPct=0.90` caps the sum of position allocations after every entry and rebalance. At least 10% of current equity is therefore outside LP positions. The existing risk budget (0.3% per position / 0.6% aggregate) is separate and can restrict allocation far below 90%. Do not increase the risk budget just to force capital utilization.
+
+## Top LP wallet and Meridian-style screening
+
+Wallet events must match canonical Meteora DLMM CPI events and a verified PositionV2 ownership/pool record. The wallet must additionally match a fresh trusted `top-lp-wallet-index` score. Rank inputs should include closed-position sample size, realized PnL, fees earned, win rate, max drawdown and range efficiency. The repository includes rank/decoder adapters but no automatic provider for a global top-trader list; configure a trusted index or curated feed.
+
+Token/pool fields now also require organic score, bot-holder ratio, token fee activity, developer blocklist result, launchpad status, Meteora bin step, quote organic score and fee/active-TVL ratio. Missing or stale fields fail closed.
+
+## Read-only PnL and automated paper runtime
+
+`createMeteoraPnLReadOnlyAdapter` reads Meteora portfolio and per-pool PnL endpoints and can use an injected read-only SDK fallback. It does not convert headline PnL into per-interval `PositionV2` fee marks. The engine still accepts exact, independently verified bin-level `lpMark` inputs only.
+
+`npm run paper:runtime` runs the persistent orchestrator. Set `PAPER_SNAPSHOT_PROVIDER_MODULE` to a local module exporting `createSnapshotProvider({ config, env })`. It must return an object with `readOnly: true` and `getSnapshots()`, and must not expose signing or transaction methods. The orchestrator is single-flight, orders snapshots by timestamp, persists state after each snapshot, reports errors and stops cleanly. It does not itself construct the external Blockchain API/Router GPT client; `createPaperDataBridge` defines a read-only provider contract for that future connection.
