@@ -12,7 +12,25 @@ export const config = Object.freeze({
   startingEquityUsd,
   maxRiskPerPositionPct: Number(process.env.MAX_RISK_PER_POSITION_PCT ?? 0.003),
   maxPortfolioRiskPct: Number(process.env.MAX_PORTFOLIO_RISK_PCT ?? 0.006),
-  maxPositionAllocationPct: Number(process.env.MAX_POSITION_ALLOCATION_PCT ?? 0.125),
+  maxPositionAllocationPct: Number(process.env.MAX_POSITION_ALLOCATION_PCT ?? 0.45),
+  maxPortfolioUtilizationPct: Number(process.env.MAX_PORTFOLIO_UTILIZATION_PCT ?? 0.90),
+  hardStopLossPct: Number(process.env.HARD_STOP_LOSS_PCT ?? 50),
+  rebalanceLevelsPct: Object.freeze([15, 30, 45]),
+  rebalanceQuoteMaxAgeSec: Number(process.env.REBALANCE_QUOTE_MAX_AGE_SEC ?? 30),
+  minWalletRankScore: Number(process.env.MIN_WALLET_RANK_SCORE ?? 65),
+  requireRankedWallets: process.env.REQUIRE_RANKED_LP_WALLETS !== 'false',
+  maxTvlUsd: Number(process.env.MAX_TVL_USD ?? 150_000),
+  maxMarketCapUsd: Number(process.env.MAX_MARKET_CAP_USD ?? 10_000_000),
+  minOrganicScore: Number(process.env.MIN_ORGANIC_SCORE ?? 60),
+  minQuoteOrganicScore: Number(process.env.MIN_QUOTE_ORGANIC_SCORE ?? 60),
+  maxBotHoldersPct: Number(process.env.MAX_BOT_HOLDERS_PCT ?? 30),
+  minTokenFeesSol: Number(process.env.MIN_TOKEN_FEES_SOL ?? 30),
+  minBinStep: Number(process.env.MIN_BIN_STEP ?? 80),
+  maxBinStep: Number(process.env.MAX_BIN_STEP ?? 125),
+  minFeeActiveTvlRatio: Number(process.env.MIN_FEE_ACTIVE_TVL_RATIO ?? 0.05),
+  maxVolatility24hPct: Number(process.env.MAX_VOLATILITY_24H_PCT ?? 7),
+  allowedLaunchpads: Object.freeze((process.env.ALLOWED_LAUNCHPADS ?? '').split(',').map(x => x.trim()).filter(Boolean)),
+  blockedLaunchpads: Object.freeze((process.env.BLOCKED_LAUNCHPADS ?? '').split(',').map(x => x.trim()).filter(Boolean)),
   maxOpenPositions: Number(process.env.MAX_OPEN_POSITIONS ?? 2),
   minTvlUsd: Number(process.env.MIN_TVL_USD ?? 25_000),
   minVolume24hUsd: Number(process.env.MIN_VOLUME_24H_USD ?? 10_000),
@@ -59,8 +77,18 @@ if (!(config.maxRiskPerPositionPct > 0 && config.maxRiskPerPositionPct <= 0.003)
 if (!(config.maxPortfolioRiskPct >= config.maxRiskPerPositionPct && config.maxPortfolioRiskPct <= 0.006)) {
   throw new Error('MAX_PORTFOLIO_RISK_PCT must be >= per-position risk and <=0.6%');
 }
-if (!(config.maxPositionAllocationPct > 0 && config.maxPositionAllocationPct <= 0.125)) {
-  throw new Error('MAX_POSITION_ALLOCATION_PCT must be >0 and <=12.5%');
+if (!(config.maxPositionAllocationPct > 0 && config.maxPositionAllocationPct <= 0.45)) {
+  throw new Error('MAX_POSITION_ALLOCATION_PCT must be >0 and <=45%');
+}
+if (!(config.maxPortfolioUtilizationPct > 0 && config.maxPortfolioUtilizationPct <= 0.90)) {
+  throw new Error('MAX_PORTFOLIO_UTILIZATION_PCT must be >0 and <=90%');
+}
+if (config.hardStopLossPct !== 50 || JSON.stringify(config.rebalanceLevelsPct) !== JSON.stringify([15, 30, 45])) {
+  throw new Error('Asymmetric LP management is fixed to rebalance at 15/30/45% drawdown and hard stop at 50%');
+}
+if (config.minOrganicScore < 60 || config.maxBotHoldersPct > 30 || config.minTokenFeesSol < 30 ||
+    config.minBinStep < 80 || config.maxBinStep > 125 || config.minFeeActiveTvlRatio < 0.05) {
+  throw new Error('Meridian-style screening thresholds cannot be weakened below the conservative preset');
 }
 if (config.minPairAgeDays < 14 || config.minMarketCapUsd < 250_000 ||
     config.minPairLiquidityUsd < 50_000 || config.maxFdvToMarketCap > 2.5) {
