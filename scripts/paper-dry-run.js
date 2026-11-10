@@ -174,12 +174,12 @@ async function runScenario({ name, winRateTargetPct }) {
     openedTrades++;
 
     if (outcomes[index]) {
-      const peak = buildSnapshot(index, now + MINUTE);
+      const peak = buildSnapshot(index, now + 58 * MINUTE);
       peak.walletSignals = [];
       peak.inventoryPnlPct = 6.5;
       updateDrawdown(await engine.processSnapshot(peak));
 
-      const trail = buildSnapshot(index, now + 2 * MINUTE);
+      const trail = buildSnapshot(index, now + 59 * MINUTE);
       trail.walletSignals = [];
       trail.inventoryPnlPct = 4.5;
       const closeResult = await engine.processSnapshot(trail);
@@ -229,17 +229,18 @@ const results = [];
 for (const scenario of scenarios) results.push(await runScenario(scenario));
 
 const report = {
-  title: 'Wave_Agent balanced LP synthetic dry-run',
+  title: 'Wave_Agent HALO behavioural LP synthetic dry-run',
   generatedAt: new Date().toISOString(),
-  strategy: { entry: 'hybrid', style: 'balanced-lp', exit: 'dynamic-lp' },
+  strategy: { entry: 'hybrid-top-wallet', style: 'halo-behavioral-lp', exit: 'asymmetric-lp' },
   assumptions: {
     initialEquityUsd: INITIAL_EQUITY_USD,
     tradesPerScenario: TRADE_COUNT,
-    winnerExit: 'peak +6.5%, then retrace to +4.5% to trigger profit trailing lock',
+    winnerExit: 'mark +6.5% after 58m, then retrace to +4.5% after 59m to trigger the HALO soft profit lock',
+    holdingPolicy: '20m minimum for soft profit exits; 59m is the measured median reference, not a forced hold; all hard safety exits remain immediate',
     loserExit: '50% spot drawdown from entry to trigger the asymmetric hard stop',
     rebalancePolicy: 'paper range rebalance proposals at -15%, -30% and -45%; fresh read-only router quote and existing inventory only',
     allCandidates: 'synthetic pair age 21d, market cap $2m, FDV $2.4m, pair liquidity $400k, 24h fees $150, 7d fees $1,000',
-    risk: '0.3% equity risk per position, 0.6% aggregate risk, max 90% portfolio capital utilization and 10% cash reserve',
+    risk: '0.15% base risk per position; evidence-based staged increases capped at 0.30%; 0.6% aggregate risk, max 90% portfolio capital utilization and 10% cash reserve',
     exclusions: 'No real wallet history, no real Meteora bin replay, no real fill/slippage or observed LP fee checkpoints'
   },
   results
