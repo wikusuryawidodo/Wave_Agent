@@ -56,7 +56,7 @@ export function evaluateAsymmetricRebalance({
     Number(range.lower) < Number(currentPrice) &&
     Number(range.upper) > Number(currentPrice) &&
     (quote.fundingMode ?? 'reuse-existing-inventory') === 'reuse-existing-inventory' &&
-    (!finite(quote.additionalCapitalUsd) || Number(quote.additionalCapitalUsd) === 0);
+    finite(quote.additionalCapitalUsd) && Number(quote.additionalCapitalUsd) === 0;
 
   if (!quoteValid) {
     return {
