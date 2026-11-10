@@ -65,7 +65,6 @@ const engineConfig = {
   feeCaptureShare: config.feeCaptureShare,
   expectedHoldHours: config.expectedHoldHours,
   roundTripCostBps: config.roundTripCostBps,
-  maxVolatility24hPct: config.maxVolatility24hPct,
   maxStressLossPct: config.maxStressLossPct,
   maxDailyLossPct: config.maxDailyLossPct,
   maxDrawdownPct: config.maxDrawdownPct
