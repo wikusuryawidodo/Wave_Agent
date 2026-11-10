@@ -1,0 +1,100 @@
+name: GMGN CLI read-only smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      chain:
+        description: GMGN chain
+        required: true
+        type: choice
+        options: [sol, bsc, base, eth]
+        default: sol
+      interval:
+        description: Trending interval
+        required: true
+        type: choice
+        options: [1m, 5m, 1h, 6h, 24h]
+        default: 1h
+      limit:
+        description: Number of trending tokens to fetch (max 20)
+        required: true
+        type: choice
+        options: ["5", "10", "20"]
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  gmgn-read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install repository dependencies (including GMGN CLI)
+        run: npm install --no-audit --no-fund
+
+      - name: Configure GMGN credentials securely
+        shell: bash
+        env:
+          GMGN_API_KEY: ${{ secrets.GMGN_API_KEY }}
+          GMGN_KEYPAIR_PEM: ${{ secrets.GMGN_KEYPAIR_PEM }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GMGN_API_KEY:-}" || -z "${GMGN_KEYPAIR_PEM:-}" ]]; then
+            echo "::error::Missing repository Actions secrets. Configure GMGN_API_KEY and GMGN_KEYPAIR_PEM as described in README."
+            exit 1
+          fi
+          mkdir -p "$HOME/.config/gmgn"
+          umask 077
+          printf '%s\n' "$GMGN_KEYPAIR_PEM" > "$HOME/.config/gmgn/keypair.pem"
+          chmod 600 "$HOME/.config/gmgn/keypair.pem"
+          ./node_modules/.bin/gmgn-cli config --apply "$GMGN_API_KEY" >/dev/null
+          ./node_modules/.bin/gmgn-cli config --check
+
+      - name: Fetch GMGN trending tokens (read-only)
+        shell: bash
+        env:
+          CHAIN: ${{ inputs.chain }}
+          INTERVAL: ${{ inputs.interval }}
+          RESULT_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/gmgn-cli market trending \
+            --chain "$CHAIN" \
+            --interval "$INTERVAL" \
+            --order-by volume \
+            --direction desc \
+            --limit "$RESULT_LIMIT" \
+            --raw > "$RUNNER_TEMP/gmgn-trending.json"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw = fs.readFileSync(process.env.RUNNER_TEMP + '/gmgn-trending.json', 'utf8');
+          const parsed = JSON.parse(raw);
+          const data = parsed?.data ?? parsed;
+          let count = null;
+          if (Array.isArray(data)) count = data.length;
+          else if (data && typeof data === 'object') {
+            for (const value of Object.values(data)) {
+              if (Array.isArray(value)) { count = value.length; break; }
+            }
+          }
+          console.log('GMGN read-only Trending response parsed successfully.');
+          console.log('Result count: ' + (count === null ? 'not exposed by response shape' : count));
+          NODE
+
+      - name: Upload read-only trending response
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmgn-trending-${{ inputs.chain }}-${{ inputs.interval }}
+          path: ${{ runner.temp }}/gmgn-trending.json
+          if-no-files-found: error
+          retention-days: 1
