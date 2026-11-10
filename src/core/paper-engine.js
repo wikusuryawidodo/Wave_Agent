@@ -74,7 +74,6 @@ const DEFAULTS = {
   feeCaptureShare: 0.65,
   expectedHoldHours: 168,
   roundTripCostBps: 30,
-  maxVolatility24hPct: 7,
   maxStressLossPct: 8,
   maxLiquidityOutflowPct: -8,
   maxTrendAdx: 30,
