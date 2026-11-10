@@ -44,6 +44,7 @@ export function createJupiterTokenScreeningAdapter({
         holders: num(asset.holderCount ?? asset.holders),
         top10HoldersPct: num(asset.audit?.topHoldersPercentage),
         top10DevWalletPct: num(asset.audit?.topDevWalletPercentage),
+        botHoldersPct: num(asset.audit?.botHoldersPercentage),
         mintAuthorityDisabled: asset.audit?.mintAuthorityDisabled === true ? true : asset.audit?.mintAuthorityDisabled === false ? false : null,
         freezeAuthorityDisabled: asset.audit?.freezeAuthorityDisabled === true ? true : asset.audit?.freezeAuthorityDisabled === false ? false : null,
         organicScore: num(asset.organicScore),
