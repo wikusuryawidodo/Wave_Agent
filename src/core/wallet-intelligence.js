@@ -78,3 +78,39 @@ export function enrichWalletEvent(event, rankedWallets = []) {
     walletRankScore: ranked.score
   };
 }
+
+/** Build compact 24h LP activity metrics from already verified wallet events. */
+export function summarizeWalletActivity(events, { now = Date.now(), maxAgeSec = 120 } = {}) {
+  if (!Array.isArray(events)) throw new Error('wallet events must be an array');
+  const recent = events.filter(event => {
+    const at = typeof event.timestamp === 'number' ? event.timestamp : Date.parse(event.timestamp);
+    return event.verified === true && event.success === true &&
+      event.programId === 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo' &&
+      Number.isFinite(at) && at <= now && now - at <= maxAgeSec * 1000 &&
+      event.walletRankVerified === true && event.walletRankSource === 'top-lp-wallet-index';
+  });
+  const unique = new Map();
+  for (const event of recent) {
+    const key = String(event.walletGroup ?? event.walletAddress ?? '');
+    if (key && !unique.has(key)) unique.set(key, event);
+  }
+  const adds = recent.filter(e => e.eventType === 'add-liquidity');
+  const removes = recent.filter(e => e.eventType === 'remove-liquidity');
+  const addUsd = adds.reduce((sum,e)=>sum+(Number(e.quoteAmountUsd)||0),0);
+  const removeUsd = removes.reduce((sum,e)=>sum+(Number(e.quoteAmountUsd)||0),0);
+  const ranked = [...unique.values()].map(e=>Number(e.walletRankScore)).filter(Number.isFinite);
+  const averageWalletRankScore = ranked.length ? ranked.reduce((a,b)=>a+b,0)/ranked.length : 0;
+  return {
+    verified: recent.length > 0,
+    source: 'helius-wallet-monitor',
+    dataAgeSec: recent.length ? Math.max(0,(now-Math.max(...recent.map(e=>typeof e.timestamp==='number'?e.timestamp:Date.parse(e.timestamp))))/1000) : null,
+    uniqueActiveWallets24h: unique.size,
+    addEvents: adds.length,
+    removeEvents: removes.length,
+    quoteAddsUsd: addUsd,
+    quoteRemovesUsd: removeUsd,
+    netQuoteFlowUsd: addUsd - removeUsd,
+    averageWalletRankScore,
+    walletActivityScore: Math.round(Math.min(100, averageWalletRankScore * 0.7 + Math.min(30, unique.size * 5)))
+  };
+}
