@@ -1,5 +1,4 @@
 import { getJson } from '../providers/http.js';
-import { rankGmgnDiscoveryTokens } from '../core/gmgn-discovery.js';
 
 const BASE = 'https://datapi.jup.ag/v1/assets/search';
 const num = value => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
