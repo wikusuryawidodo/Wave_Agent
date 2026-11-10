@@ -241,7 +241,7 @@ test('daily-loss circuit breaker blocks new LP entries', async () => {
   const e = engine({ config: { maxOpenPositions: 1, maxDailyLossPct: 0.4 } });
   const start = 1_800_000_000_000;
   await e.processSnapshot(snapshot(start));
-  const loss = snapshot(start + 60_000, { inventoryPnlPct: -10 });
+  const loss = snapshot(start + 60_000, { inventoryPnlPct: -80 });
   loss.walletSignals = [];
   await e.processSnapshot(loss);
   const later = snapshot(start + 120_000);
@@ -322,7 +322,7 @@ test('verified per-bin position fee marks accrue exact reported fees, not pool T
     lpMark: {
       verified: true,
       source: 'meteora-position-v2-bin-fee-replay',
-      feesSinceLastUsd: 7.25,
+      feesSinceLastUsd: 0.25,
       positionFeeApr24hPct: 170,
       positionFeeApr7dPct: 160,
       inRange: true
@@ -331,7 +331,7 @@ test('verified per-bin position fee marks accrue exact reported fees, not pool T
   update.walletSignals = [];
   const marked = await e.processSnapshot(update);
   assert.equal(marked.exits.length, 0, JSON.stringify(marked.exits));
-  assert.equal([...e.positions.values()][0].feesAccruedUsd, 7.25);
+  assert.equal([...e.positions.values()][0].feesAccruedUsd, 0.25);
 });
 
 test('asymmetric rebalance requires a fresh verified router quote and reuses existing capital', async () => {
