@@ -7,7 +7,7 @@ const startingEquityUsd = explicitPaperEquity != null && explicitPaperEquity !==
 
 export const config = Object.freeze({
   mode: 'paper',
-  strategy: Object.freeze({ entry: 'hybrid', style: 'balanced-lp', exit: 'dynamic-lp' }),
+  strategy: Object.freeze({ entry: 'hybrid-top-wallet', style: 'capital-capped-lp', exit: 'asymmetric-lp' }),
   startingEquitySol,
   startingEquityUsd,
   maxRiskPerPositionPct: Number(process.env.MAX_RISK_PER_POSITION_PCT ?? 0.003),
