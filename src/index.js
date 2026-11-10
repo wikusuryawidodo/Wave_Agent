@@ -11,6 +11,13 @@ import { estimateFeeYield } from './core/fee-model.js';
 
 export { PaperTradingEngine } from './core/paper-engine.js';
 export { rankGmgnDiscoveryTokens } from './core/gmgn-discovery.js';
+export { rankTopLpWallets, enrichWalletEvent, summarizeWalletActivity } from './core/wallet-intelligence.js';
+export { evaluateAsymmetricRebalance, ASYMMETRIC_REBALANCE_LEVELS_PCT } from './core/asymmetric-rebalance.js';
+export { createMeteoraWalletActivityAdapter, decodeMeteoraLiquidityEvents } from './adapters/meteora-wallet-activity.js';
+export { createMeteoraPnLReadOnlyAdapter } from './adapters/meteora-pnl-readonly.js';
+export { createPaperDataBridge } from './adapters/paper-data-bridge.js';
+export { createPaperOrchestrator } from './runtime/paper-orchestrator.js';
+
 export {
   rankTrendingPools,
   chooseTrendingZapRange,
