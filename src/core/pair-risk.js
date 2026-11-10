@@ -8,6 +8,7 @@ export function assessPairRisk({
   minPairAgeDays = 14,
   maxPairEvidenceAgeSec = 120,
   minMarketCapUsd = 250_000,
+  maxMarketCapUsd = 10_000_000,
   maxFdvToMarketCap = 2.5,
   minPairLiquidityUsd = 50_000,
   minLiquidityToMarketCap = 0.08,
@@ -45,7 +46,7 @@ export function assessPairRisk({
   const marketCapUsd = Number(pairEvidence.marketCapUsd);
   const fdvUsd = Number(pairEvidence.fdvUsd);
   const liquidityUsd = Number(pairEvidence.liquidityUsd);
-  if (!finite(marketCapUsd) || marketCapUsd < minMarketCapUsd) failures.push('market cap below minimum or unavailable');
+  if (!finite(marketCapUsd) || marketCapUsd < minMarketCapUsd || marketCapUsd > maxMarketCapUsd) failures.push('market cap outside allowed range or unavailable');
   if (!finite(fdvUsd) || !finite(marketCapUsd) || marketCapUsd <= 0 || fdvUsd < marketCapUsd) {
     failures.push('FDV/market cap evidence invalid or unavailable');
   } else if (fdvUsd / marketCapUsd > maxFdvToMarketCap) {
