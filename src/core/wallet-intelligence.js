@@ -80,7 +80,7 @@ export function enrichWalletEvent(event, rankedWallets = []) {
 }
 
 /** Build compact 24h LP activity metrics from already verified wallet events. */
-export function summarizeWalletActivity(events, { now = Date.now(), maxAgeSec = 120 } = {}) {
+export function summarizeWalletActivity(events, { now = Date.now(), maxAgeSec = 24 * 3600 } = {}) {
   if (!Array.isArray(events)) throw new Error('wallet events must be an array');
   const recent = events.filter(event => {
     const at = typeof event.timestamp === 'number' ? event.timestamp : Date.parse(event.timestamp);
@@ -100,10 +100,16 @@ export function summarizeWalletActivity(events, { now = Date.now(), maxAgeSec = 
   const removeUsd = removes.reduce((sum,e)=>sum+(Number(e.quoteAmountUsd)||0),0);
   const ranked = [...unique.values()].map(e=>Number(e.walletRankScore)).filter(Number.isFinite);
   const averageWalletRankScore = ranked.length ? ranked.reduce((a,b)=>a+b,0)/ranked.length : 0;
+  const latestEventAt = recent.length
+    ? Math.max(...recent.map(e=>typeof e.timestamp==='number'?e.timestamp:Date.parse(e.timestamp)))
+    : null;
   return {
     verified: recent.length > 0,
     source: 'helius-wallet-monitor',
-    dataAgeSec: recent.length ? Math.max(0,(now-Math.max(...recent.map(e=>typeof e.timestamp==='number'?e.timestamp:Date.parse(e.timestamp))))/1000) : null,
+    generatedAt: now,
+    dataAgeSec: 0,
+    windowHours: maxAgeSec / 3600,
+    latestEventAgeSec: latestEventAt == null ? null : Math.max(0,(now-latestEventAt)/1000),
     uniqueActiveWallets24h: unique.size,
     addEvents: adds.length,
     removeEvents: removes.length,
