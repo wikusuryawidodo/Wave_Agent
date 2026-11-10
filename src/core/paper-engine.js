@@ -650,13 +650,12 @@ export class PaperTradingEngine {
 
     const risk = this._rollRiskDay(now);
     let entry = { status: 'not-evaluated' };
-    if (this.positions.size >= this.config.maxOpenPositions) entry = { status: 'blocked', reason: 'max-open-positions' };
-    else if ([...this.positions.values()].some(p => p.poolAddress === poolAddress)) entry = { status: 'blocked', reason: 'pool-already-open' };
-    else if (this.dailyLossHalted || risk.dayReturnPct <= -this.config.maxDailyLossPct) {
+    if (this.dailyLossHalted || risk.dayReturnPct <= -this.config.maxDailyLossPct) {
       entry = { status: 'blocked', reason: 'daily-loss-circuit-breaker', risk };
     } else if (risk.drawdownPct >= this.config.maxDrawdownPct) {
       entry = { status: 'blocked', reason: 'portfolio-drawdown-circuit-breaker', risk };
-    } else if (this.lastClosedAtByPool.has(poolAddress) &&
+    } else if (this.positions.size >= this.config.maxOpenPositions) entry = { status: 'blocked', reason: 'max-open-positions' };
+    else if ([...this.positions.values()].some(p => p.poolAddress === poolAddress)) entry = { status: 'blocked', reason: 'pool-already-open' }; else if (this.lastClosedAtByPool.has(poolAddress) &&
       now - this.lastClosedAtByPool.get(poolAddress) < this.config.poolCooldownMs) {
       entry = { status: 'blocked', reason: 'pool-cooldown' };
     } else if (this.availableCapitalUsd <= 0) {
