@@ -6,9 +6,9 @@ Read-only Solana/Meteora DLMM analytics with a deterministic **paper-only** trad
 
 ## Strategy preset
 
-- **Entry: hybrid LP.** Requires persistent fee economics, verified token security, an exact mature pair, market confirmation on 5m/30m, two distinct verified Meteora LP-add wallet groups, and bin-level stress evidence.
-- **Style: balanced LP.** Planned risk is 0.3% of equity per position, aggregate reserved risk is capped at 0.6%, at most two open positions, and at most 12.5% equity allocated to one position.
-- **Exit: dynamic LP.** Stress-adjusted hard stop, profit trailing lock, net take-profit, out-of-range timeout, 30m trend reversal, fee-yield decay, tracked-wallet withdrawals and a seven-day time stop.
+- **Entry: hybrid LP + top-wallet convergence.** Requires persistent fee economics, verified token security, an exact mature pair, market confirmation on 5m/30m, at least two distinct verified Meteora LP-adds from ranked top-LP wallets, Meridian-style organic/holder/bot/dev/launchpad screening, and bin-level stress evidence.
+- **Style: capital-capped LP.** Planned risk remains 0.3% of equity per position and 0.6% aggregate. Maximum capital utilization is 90% across all positions and rebalances; at least 10% stays unallocated. Maximum two open positions; per-position capital ceiling is 45%, but sizing may be much smaller because the independent risk budget is binding.
+- **Exit: asymmetric LP.** Paper range rebalances at -15%, -30%, and -45% spot drawdown from entry; hard stop at -50%. Each rebalance requires a fresh verified read-only router quote and reuses existing inventory only. Other dynamic exits include profit trailing lock, net take-profit, out-of-range timeout, 30m trend reversal, fee-yield decay, tracked-wallet withdrawals and a seven-day time stop.
 - **Fee-farming hurdle:** whole-pool APR is only a sanity check; require simulated proposed-range position APR >=120% (24h) and >=150% (7d), projected 7d net edge >=1.0%, fee coverage >=2× inventory drag + round-trip cost, and 7d inventory drag <=1.0%. Forecast fee capture is haircut 35%.
 - **Trending + one-token zap option:** separate paper planner ranks volume/velocity/fee consistency, supports approved quote-asset zap into an in-range range, directional single-sided ranges away from spot, volatility-aware widths (6% / 15% / 30–50%), and five-minute edge/fee/out-of-range monitoring. This option is planner-only; there is no router zap or automatic close transaction.
 - **Pair and token safety:** exact pair at least 14 days old; token age at least 14 days; market cap at least $250k; FDV/market-cap at most 2.5; pair liquidity at least $50k and 8% of market cap; minimum 24h sell activity and bounded buy/sell ratio.
@@ -27,9 +27,9 @@ See [docs/PAPER-ENGINE.md](docs/PAPER-ENGINE.md) for risk math, snapshot fields,
 
 ## Important integration boundary
 
-The engine is implemented and can be driven using the documented JSONL snapshot contract. The current Helius wallet watcher still emits raw subscription notifications; it does **not yet parse verified Meteora add/remove-liquidity instructions and merge them automatically with pool metrics, exact pair evidence and 5m/30m candles**. The DexScreener adapter supplies pair age/cap/liquidity evidence only; it does not certify token safety. A verified wallet-event parser and a bin-level stress/mark simulator are still required before unattended paper operation. Do not manufacture the `verified` flags from raw logs or transfers.
+The engine accepts the documented JSONL snapshot contract. New read-only modules decode Meteora DLMM CPI events, verify PositionV2 ownership/pool/quote-side deposits through an injected resolver, rank wallet-performance records, and summarize wallet flow. They are not yet assembled into a turnkey provider: an external read-only snapshot provider must join wallet events, Meteora pool metrics, Jupiter token audit, exact pair evidence, candles, top-wallet ranking and bin-level marks. The wallet ranking feed must be sourced from a trusted index or operator-curated performance data; this repository does not claim to discover real-world top traders on its own. Do not manufacture `verified` flags from raw logs or transfers.
 
-The inventory PnL fallback is a simplified concentrated-liquidity approximation, not exact Meteora PositionV2 bin/share accounting. Exact paper PnL requires observed bin inventory, position liquidity shares and fee checkpoints.
+The new Meteora PnL read-only adapter follows the portfolio + per-pool PnL API pattern and accepts an injected read-only SDK/RPC fallback. The paper engine still requires exact `lpMark` fee checkpoints and bin-level inventory marks; a portfolio headline PnL is not silently substituted for interval fee growth. The inventory fallback remains a simplified concentrated-liquidity approximation, not exact PositionV2 bin/share accounting.
 
 ## Fee farming and inventory-loss filter
 
@@ -96,7 +96,7 @@ npm run paper:worker < fixtures/paper-snapshots.jsonl
 npm run paper:fee-analysis
 ```
 
-The fixture is synthetic and demonstrates an entry followed by a deterministic stop; it is not market data. In a live read-only research setup, a separate adapter must construct compliant snapshots from verified data. Use `PAPER_STATE_PATH` to choose the persistent state file.
+The fixture and `paper:dry-run` are synthetic scenario tests, not market data or historical replay. The live paper runtime does not invent missing metrics: it requires a provider that supplies the extended wallet/security/pool/fee/bin inputs. In a live read-only research setup, a separate adapter must construct compliant snapshots from verified data. Use `PAPER_STATE_PATH` to choose the persistent state file. For scheduled unattended paper operation, `npm run paper:runtime` starts the persistent orchestrator. Set `PAPER_SNAPSHOT_PROVIDER_MODULE` to a local JavaScript module exporting `createSnapshotProvider({ config, env })`; the provider must declare `readOnly: true` and return normalized snapshots from `getSnapshots()`. The runtime rejects providers exposing transaction execution methods and persists account state after each snapshot.
 
 Other commands:
 
