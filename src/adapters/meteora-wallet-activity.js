@@ -79,7 +79,8 @@ export function decodeMeteoraLiquidityEvents(transaction, eventCoder, {
 export function createMeteoraWalletActivityAdapter({
   helius,
   eventCoder,
-  resolvePosition,
+  resolvePosition = null,
+  meteoraOnchain = null,
   rankedWallets = [],
   quoteMintPricesUsd = {},
   minQuoteDepositUsd = 25,
@@ -87,7 +88,25 @@ export function createMeteoraWalletActivityAdapter({
   clock = Date.now
 } = {}) {
   if (!helius?.readOnly || typeof helius.getTransaction !== 'function') throw new Error('A read-only Helius adapter is required');
-  if (typeof resolvePosition !== 'function') throw new Error('A verified PositionV2 resolver is required');
+  const positionResolver = typeof resolvePosition === 'function'
+    ? resolvePosition
+    : (meteoraOnchain?.readOnly === true && typeof meteoraOnchain.getPosition === 'function'
+      ? async ({ positionAddress, poolAddress, walletAddress }) => {
+          const positions = await meteoraOnchain.getPosition(poolAddress, walletAddress);
+          const position = positions.find(item => item.publicKey === positionAddress);
+          if (!position) return null;
+          return {
+            ...position,
+            owner: position.ownerAddress,
+            poolAddress: position.poolAddress,
+            xMint: position.xMint,
+            yMint: position.yMint,
+            decimalsX: position.decimalsX,
+            decimalsY: position.decimalsY
+          };
+        }
+      : null);
+  if (typeof positionResolver !== 'function') throw new Error('A read-only Meteora PositionV2 resolver is required');
   const ranked = rankedWallets;
   const decimalsFor = mint => mint === 'So11111111111111111111111111111111111111112' ? 9 : 6;
 
@@ -97,7 +116,7 @@ export function createMeteoraWalletActivityAdapter({
     const output = [];
     for (const event of decoded) {
       if (event.walletAddress !== walletAddress || !event.positionAddress || !event.poolAddress) continue;
-      const position = await resolvePosition({
+      const position = await positionResolver({
         positionAddress: event.positionAddress,
         poolAddress: event.poolAddress,
         walletAddress,
