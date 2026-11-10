@@ -31,7 +31,7 @@ export function createMeteoraPnLReadOnlyAdapter({
       raw: payload,
       positions: rowsFrom(payload).flatMap(row => {
         const nested = Array.isArray(row.positions) ? row.positions : [row];
-        return nested.map(position => normalizePosition(position, row));
+        return nested.map(position => normalizePosition(position, row, clock));
       }).filter(Boolean)
     };
   }
@@ -44,7 +44,7 @@ export function createMeteoraPnLReadOnlyAdapter({
     url.searchParams.set('pageSize', '100');
     url.searchParams.set('page', '1');
     const payload = await getJson(url, { fetchImpl });
-    const positions = rowsFrom(payload).map(position => normalizePosition(position, { poolAddress }));
+    const positions = rowsFrom(payload).map(position => normalizePosition(position, { poolAddress }, clock));
     return { source: 'meteora-position-pnl-api', poolAddress, walletAddress, retrievedAt: clock(), positions: positions.filter(Boolean), raw: payload };
   }
 
@@ -67,7 +67,7 @@ export function createMeteoraPnLReadOnlyAdapter({
         source: 'meteora-sdk-rpc-fallback',
         walletAddress,
         retrievedAt: clock(),
-        positions: fallback.positions.map(p => normalizePosition(p, {})).filter(Boolean),
+        positions: fallback.positions.map(p => normalizePosition(p, {}, clock)).filter(Boolean),
         fallbackUsed: true,
         primaryError: error.message
       };
@@ -84,7 +84,7 @@ export function createMeteoraPnLReadOnlyAdapter({
   };
 }
 
-function normalizePosition(position, parent) {
+function normalizePosition(position, parent, clock = Date.now()) {
   if (!position || typeof position !== 'object') return null;
   const positionAddress = position.positionAddress ?? position.position ?? position.publicKey ?? position.address;
   const poolAddress = position.poolAddress ?? position.pool ?? parent.poolAddress ?? parent.address;
