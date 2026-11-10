@@ -315,8 +315,10 @@ test('fee growth is booked only from verified PositionV2 per-bin fee marks', asy
 test('verified per-bin position fee marks accrue exact reported fees, not pool TVL estimates', async () => {
   const e = engine();
   const start = 1_800_000_000_000;
-  await e.processSnapshot(snapshot(start));
+  const opened = await e.processSnapshot(snapshot(start));
+  assert.equal(opened.entry.status, 'opened', JSON.stringify(opened.entry));
   const update = snapshot(start + 60_000, {
+    inventoryPnlPct: 0,
     lpMark: {
       verified: true,
       source: 'meteora-position-v2-bin-fee-replay',
@@ -327,7 +329,8 @@ test('verified per-bin position fee marks accrue exact reported fees, not pool T
     }
   });
   update.walletSignals = [];
-  await e.processSnapshot(update);
+  const marked = await e.processSnapshot(update);
+  assert.equal(marked.exits.length, 0, JSON.stringify(marked.exits));
   assert.equal([...e.positions.values()][0].feesAccruedUsd, 7.25);
 });
 
