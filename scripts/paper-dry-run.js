@@ -101,6 +101,21 @@ function buildSnapshot(index, now) {
       verifiedEvent('wallet-a-' + index, 20_000, 1),
       verifiedEvent('wallet-b-' + index, 10_000, 2)
     ],
+    walletActivity: {
+      verified: true,
+      source: 'helius-wallet-monitor',
+      generatedAt: now,
+      dataAgeSec: 0,
+      windowHours: 24,
+      uniqueActiveWallets24h: 2,
+      addEvents: 2,
+      removeEvents: 0,
+      quoteAddsUsd: 300,
+      quoteRemovesUsd: 0,
+      netQuoteFlowUsd: 300,
+      averageWalletRankScore: 82,
+      walletActivityScore: 82
+    },
     lpMark: {
       verified: true,
       source: 'meteora-position-v2-bin-fee-replay',
