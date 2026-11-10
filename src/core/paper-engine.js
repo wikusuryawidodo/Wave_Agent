@@ -4,6 +4,7 @@ import { planLpRange } from './range-planner.js';
 import { assessLpEconomics, sizeLpPosition } from './lp-economics.js';
 import { assessPairRisk } from './pair-risk.js';
 import { clmmInventoryReturnPct, rangeExposure } from './impermanent-loss.js';
+import { evaluateAsymmetricRebalance } from './asymmetric-rebalance.js';
 
 export const METEORA_DLMM_PROGRAM_ID = 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo';
 
@@ -13,7 +14,25 @@ const DEFAULTS = {
   exit: 'dynamic-lp',
   riskPerPositionPct: 0.003,
   maxPortfolioRiskPct: 0.006,
-  maxPositionAllocationPct: 0.125,
+  maxPositionAllocationPct: 0.45,
+  maxPortfolioUtilizationPct: 0.90,
+  hardStopLossPct: 50,
+  rebalanceLevelsPct: [15, 30, 45],
+  rebalanceQuoteMaxAgeSec: 30,
+  minWalletRankScore: 65,
+  requireRankedWallets: true,
+  maxTvlUsd: 150_000,
+  maxMarketCapUsd: 10_000_000,
+  minOrganicScore: 60,
+  minQuoteOrganicScore: 60,
+  maxBotHoldersPct: 30,
+  minTokenFeesSol: 30,
+  minBinStep: 80,
+  maxBinStep: 125,
+  minFeeActiveTvlRatio: 0.05,
+  maxVolatility24hPct: 7,
+  allowedLaunchpads: [],
+  blockedLaunchpads: [],
   maxOpenPositions: 2,
   minTvlUsd: 25_000,
   minVolume24hUsd: 10_000,
@@ -111,6 +130,9 @@ function uniqueVerifiedWalletEvents(signals, now, config, poolAddress, eventType
         !signature || !Number.isInteger(index) || seenInstructions.has(id) ||
         !Number.isFinite(time) || time > now || now - time > config.walletWindowMs ||
         !isFiniteNumber(signal.quoteAmountUsd) || Number(signal.quoteAmountUsd) < config.minWalletDepositUsd) continue;
+    if (config.requireRankedWallets &&
+        (signal.walletRankVerified !== true || signal.walletRankSource !== 'top-lp-wallet-index' ||
+         !isFiniteNumber(signal.walletRankScore) || Number(signal.walletRankScore) < config.minWalletRankScore)) continue;
     seenInstructions.add(id);
     const prior = byWallet.get(wallet);
     if (!prior || time > prior.timestamp) {
@@ -139,7 +161,13 @@ function checkSecurity(snapshot, config) {
   if (!isFiniteNumber(s.top10DevWalletPct) || Number(s.top10DevWalletPct) > config.maxTop10DevWalletPct) failures.push('developer-wallet concentration too high or unknown');
   if (!isFiniteNumber(s.holders) || Number(s.holders) < config.minHolders) failures.push('holder count too low or unknown');
   if (!isFiniteNumber(s.tokenAgeDays) || Number(s.tokenAgeDays) < config.minTokenAgeDays) failures.push('token too new or age unknown');
-  if (!isFiniteNumber(s.marketCapUsd) || Number(s.marketCapUsd) < config.minMarketCapUsd) failures.push('market cap too low or unknown');
+  if (!isFiniteNumber(s.marketCapUsd) || Number(s.marketCapUsd) < config.minMarketCapUsd || Number(s.marketCapUsd) > config.maxMarketCapUsd) failures.push('market cap outside token screening limits');
+  if (!isFiniteNumber(s.organicScore) || Number(s.organicScore) < config.minOrganicScore) failures.push('organic activity score too low or unknown');
+  if (!isFiniteNumber(s.botHoldersPct) || Number(s.botHoldersPct) > config.maxBotHoldersPct) failures.push('bot holder concentration too high or unknown');
+  if (!isFiniteNumber(s.tokenFeesSol) || Number(s.tokenFeesSol) < config.minTokenFeesSol) failures.push('token fee activity below threshold or unknown');
+  if (s.devBlocked !== false) failures.push('developer blocklist status is not explicitly clear');
+  if (config.allowedLaunchpads.length && !config.allowedLaunchpads.includes(s.launchpad)) failures.push('launchpad is not allowlisted');
+  if (config.blockedLaunchpads.includes(s.launchpad)) failures.push('launchpad is blocked');
   return { eligible: failures.length === 0, failures, snapshot: s };
 }
 
@@ -164,8 +192,14 @@ export class PaperTradingEngine {
       if (!(this.config[key] > 0 && this.config[key] <= 0.01)) throw new Error(key + ' must be >0 and <=1%');
     }
     if (this.config.maxPortfolioRiskPct < this.config.riskPerPositionPct) throw new Error('Portfolio risk cannot be below per-position risk');
-    if (!(this.config.maxPositionAllocationPct > 0 && this.config.maxPositionAllocationPct <= 0.125)) {
-      throw new Error('Balanced LP allocation must be >0 and <=12.5%');
+    if (!(this.config.maxPositionAllocationPct > 0 && this.config.maxPositionAllocationPct <= 0.45)) {
+      throw new Error('Per-position capital allocation must be >0 and <=45%');
+    }
+    if (!(this.config.maxPortfolioUtilizationPct > 0 && this.config.maxPortfolioUtilizationPct <= 0.90)) {
+      throw new Error('Portfolio capital utilization must be >0 and <=90%');
+    }
+    if (this.config.hardStopLossPct !== 50 || JSON.stringify(this.config.rebalanceLevelsPct) !== JSON.stringify([15, 30, 45])) {
+      throw new Error('Asymmetric management is fixed to -15/-30/-45% rebalance and -50% hard stop');
     }
     if (!Number.isInteger(this.config.maxOpenPositions) || this.config.maxOpenPositions < 1 || this.config.maxOpenPositions > 2) {
       throw new Error('Balanced LP preset supports 1 or 2 open positions');
@@ -199,6 +233,14 @@ export class PaperTradingEngine {
     return [...this.positions.values()].reduce((sum, p) => sum + p.reservedRiskUsd, 0);
   }
 
+  get capitalUsedUsd() {
+    return [...this.positions.values()].reduce((sum, p) => sum + p.allocationUsd, 0);
+  }
+
+  get availableCapitalUsd() {
+    return Math.max(0, Math.min(this.cashUsd, this.equityUsd * this.config.maxPortfolioUtilizationPct - this.capitalUsedUsd));
+  }
+
   summary() {
     const equity = this.equityUsd;
     const grossProfit = this.closedTrades.filter(t => t.netPnlUsd > 0).reduce((sum, t) => sum + t.netPnlUsd, 0);
@@ -219,6 +261,10 @@ export class PaperTradingEngine {
       netRealizedPnlUsd: this.closedTrades.reduce((sum, t) => sum + t.netPnlUsd, 0),
       profitFactor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 'infinite' : null,
       reservedRiskUsd: this.reservedRiskUsd,
+      capitalUsedUsd: this.capitalUsedUsd,
+      capitalUtilizationPct: equity > 0 ? this.capitalUsedUsd / equity * 100 : 0,
+      maxPortfolioUtilizationPct: this.config.maxPortfolioUtilizationPct,
+      unallocatedReserveUsd: Math.max(0, equity - this.capitalUsedUsd),
       reservedPortfolioRiskPct: equity > 0 ? this.reservedRiskUsd / equity * 100 : 0,
       dailyLossHalted: this.dailyLossHalted,
       peakEquityUsd: this.peakEquityUsd,
@@ -235,7 +281,10 @@ export class PaperTradingEngine {
     if (!poolAddress) return fail('missing pool address');
 
     const poolAge = Number(pool.dataAgeSec);
-    if (!isFiniteNumber(pool.tvlUsd) || Number(pool.tvlUsd) < this.config.minTvlUsd) return fail('TVL below floor');
+    if (!isFiniteNumber(pool.tvlUsd) || Number(pool.tvlUsd) < this.config.minTvlUsd || Number(pool.tvlUsd) > this.config.maxTvlUsd) return fail('TVL outside allowed range');
+    if (!isFiniteNumber(pool.binStep) || Number(pool.binStep) < this.config.minBinStep || Number(pool.binStep) > this.config.maxBinStep) return fail('Meteora bin step outside screening range');
+    if (!isFiniteNumber(pool.feeActiveTvlRatio) || Number(pool.feeActiveTvlRatio) < this.config.minFeeActiveTvlRatio) return fail('fee/active-TVL ratio below screening floor');
+    if (!isFiniteNumber(pool.quoteOrganicScore) || Number(pool.quoteOrganicScore) < this.config.minQuoteOrganicScore) return fail('quote-side organic score too low or unknown');
     if (!isFiniteNumber(pool.activeTvlUsd) || Number(pool.activeTvlUsd) <= 0) return fail('active TVL missing');
     if (!isFiniteNumber(pool.volume24hUsd) || Number(pool.volume24hUsd) < this.config.minVolume24hUsd) return fail('24h volume below floor');
     if (!isFiniteNumber(pool.fees24hUsd) || !isFiniteNumber(pool.fees7dUsd) || Number(pool.fees24hUsd) < 0 || Number(pool.fees7dUsd) <= 0) {
@@ -257,6 +306,7 @@ export class PaperTradingEngine {
       minPairAgeDays: this.config.minPairAgeDays,
       maxPairEvidenceAgeSec: this.config.maxPairEvidenceAgeSec,
       minMarketCapUsd: this.config.minMarketCapUsd,
+      maxMarketCapUsd: this.config.maxMarketCapUsd,
       maxFdvToMarketCap: this.config.maxFdvToMarketCap,
       minPairLiquidityUsd: this.config.minPairLiquidityUsd,
       minLiquidityToMarketCap: this.config.minLiquidityToMarketCap,
@@ -334,7 +384,7 @@ export class PaperTradingEngine {
         fees7dUsd: Number(pool.fees7dUsd),
         positionFeeApr24hPct: Number(lpRisk.positionFeeApr24hPct),
         positionFeeApr7dPct: Number(lpRisk.positionFeeApr7dPct),
-        allocationUsd: Math.min(this.equityUsd * this.config.maxPositionAllocationPct, this.cashUsd),
+        allocationUsd: Math.min(this.equityUsd * this.config.maxPositionAllocationPct, this.availableCapitalUsd),
         volatility24hPct: Number(pool.volatility24hPct),
         liquidityTrend24hPct: Number(pool.liquidityTrend24hPct),
         stressLossPct: Number(lpRisk.stressLossPct),
@@ -369,7 +419,7 @@ export class PaperTradingEngine {
       (thirty.adx <= 25 ? 15 : 5) + (five.volumeRatio >= 1 && five.volumeRatio <= 2.5 ? 15 : 5) +
       clamp(85 - bbPosition, 0, 15), 0, 100
     );
-    const economyScore = clamp(100 - Math.max(0, economics.feeApr24hPct / Math.max(economics.feeApr7dPct, 1) - 1) * 40, 0, 100);
+    const economyScore = clamp(100 - Math.max(0, economics.poolFeeApr24hPct / Math.max(economics.poolFeeApr7dPct, 1) - 1) * 40, 0, 100);
     const hybridScore = Math.round(securityScore * 0.20 + walletScore * 0.20 + technicalScore * 0.25 + economyScore * 0.35);
     if (hybridScore < 70) return fail('hybrid LP score below threshold', { hybridScore, economics });
 
@@ -378,7 +428,7 @@ export class PaperTradingEngine {
       atr: five.atr,
       volatility24hPct: Number(pool.volatility24hPct)
     });
-    const stopLossPct = clamp(Number(lpRisk.stressLossPct), this.config.stopLossFloorPct, this.config.stopLossCeilingPct);
+    const stopLossPct = this.config.hardStopLossPct;
     return {
       eligible: true,
       reason: 'hybrid LP filters and positive net edge passed',
@@ -470,6 +520,7 @@ export class PaperTradingEngine {
     }
 
     position.currentPrice = price;
+    position.priceDrawdownPct = (price / position.entryPrice - 1) * 100;
     position.currentInRange = inRange;
     position.outOfRangeSince = inRange ? null : (position.outOfRangeSince ?? now);
 
@@ -505,7 +556,7 @@ export class PaperTradingEngine {
   }
 
   _exitReason(position, now) {
-    if (position.netPnlPct <= -position.stopLossPct) return 'stress-adjusted-hard-stop';
+    if (position.priceDrawdownPct <= -this.config.hardStopLossPct) return 'asymmetric-price-hard-stop';
     if (position.walletWithdrawalCount >= this.config.walletConvergenceThreshold) return 'tracked-wallet-liquidity-withdrawal';
     if ((position.missingFeeMarkCount ?? 0) >= this.config.missingFeeMarkConfirmations) return 'missing-verified-position-fee-mark';
     if (position.outOfRangeSince != null && now - position.outOfRangeSince >= this.config.outOfRangeGraceMs) return 'out-of-range-timeout';
@@ -551,11 +602,34 @@ export class PaperTradingEngine {
     }
 
     const exits = [];
+    const rebalances = [];
     const matching = [...this.positions.values()].filter(p => p.poolAddress === poolAddress);
     for (const position of matching) {
       this._markPosition(position, snapshot, now);
       const reason = this._exitReason(position, now);
-      if (reason) exits.push(this._close(position, now, reason));
+      if (reason) {
+        exits.push(this._close(position, now, reason));
+        continue;
+      }
+      const rebalance = evaluateAsymmetricRebalance({
+        position,
+        currentPrice: position.currentPrice,
+        quote: snapshot.rebalanceQuote,
+        now,
+        hardStopLossPct: this.config.hardStopLossPct,
+        rebalanceLevelsPct: this.config.rebalanceLevelsPct,
+        maxQuoteAgeSec: this.config.rebalanceQuoteMaxAgeSec
+      });
+      if (rebalance.status === 'rebalance-ready') {
+        position.range = structuredClone(rebalance.nextRange);
+        position.rebalanceLevelsCompleted = [...new Set([...(position.rebalanceLevelsCompleted ?? []), rebalance.levelPct])];
+        position.rebalanceCount = position.rebalanceLevelsCompleted.length;
+        position.lastRebalanceAt = now;
+        position.lastRebalanceReason = `spot-drawdown-${rebalance.levelPct}pct`;
+        rebalances.push({ positionId: position.id, ...rebalance, applied: true });
+      } else if (rebalance.status === 'quote-required') {
+        rebalances.push({ positionId: position.id, ...rebalance, applied: false });
+      }
     }
 
     const risk = this._rollRiskDay(now);
@@ -569,6 +643,8 @@ export class PaperTradingEngine {
     } else if (this.lastClosedAtByPool.has(poolAddress) &&
       now - this.lastClosedAtByPool.get(poolAddress) < this.config.poolCooldownMs) {
       entry = { status: 'blocked', reason: 'pool-cooldown' };
+    } else if (this.availableCapitalUsd <= 0) {
+      entry = { status: 'blocked', reason: '90-percent-portfolio-utilization-cap', capitalUsedUsd: this.capitalUsedUsd, maxPortfolioUtilizationPct: this.config.maxPortfolioUtilizationPct };
     } else {
       const evaluation = this.evaluateEntry(snapshot, now);
       if (!evaluation.eligible) entry = { status: 'no-entry', ...evaluation };
@@ -577,7 +653,7 @@ export class PaperTradingEngine {
       } else {
         const positionSize = sizeLpPosition({
           equityUsd: this.equityUsd,
-          cashUsd: this.cashUsd,
+          cashUsd: this.availableCapitalUsd,
           reservedRiskUsd: this.reservedRiskUsd,
           riskPerPositionPct: this.config.riskPerPositionPct,
           maxPortfolioRiskPct: this.config.maxPortfolioRiskPct,
@@ -609,6 +685,10 @@ export class PaperTradingEngine {
             entryNetEdgePct: evaluation.economics.expectedNetEdgePct,
             entryScore: evaluation.hybridScore,
             walletCount: evaluation.walletCount,
+            initialAllocationUsd: positionSize.allocationUsd,
+            rebalanceLevelsCompleted: [],
+            rebalanceCount: 0,
+            priceDrawdownPct: 0,
             openedAt: now,
             lastMarkedAt: now,
             ageMs: 0,
@@ -661,12 +741,12 @@ export class PaperTradingEngine {
     }
 
     this.lastProcessedAtByPool.set(poolAddress, now);
-    return { status: 'processed', timestamp: now, poolAddress, entry, exits, portfolio: this.summary() };
+    return { status: 'processed', timestamp: now, poolAddress, entry, exits, rebalances, portfolio: this.summary() };
   }
 
   exportState() {
     return {
-      version: 2,
+      version: 3,
       initialEquityUsd: this.initialEquityUsd,
       cashUsd: this.cashUsd,
       positions: [...this.positions.values()],
@@ -681,13 +761,13 @@ export class PaperTradingEngine {
   }
 
   static fromState(state, { analyst = null, config = {} } = {}) {
-    if (state?.version !== 2 || !(Number(state.initialEquityUsd) > 0)) {
+    if (![2, 3].includes(state?.version) || !(Number(state.initialEquityUsd) > 0)) {
       throw new Error('Unsupported paper state version; archive old state and start a new LP paper account');
     }
     const engine = new PaperTradingEngine({ initialEquityUsd: Number(state.initialEquityUsd), analyst, config });
     engine.cashUsd = Number(state.cashUsd);
     if (!Number.isFinite(engine.cashUsd) || engine.cashUsd < 0) throw new Error('Paper state cash balance invalid');
-    engine.positions = new Map((state.positions ?? []).map(p => [p.id, p]));
+    engine.positions = new Map((state.positions ?? []).map(p => [p.id, { ...p, initialAllocationUsd: p.initialAllocationUsd ?? p.allocationUsd, rebalanceLevelsCompleted: p.rebalanceLevelsCompleted ?? [], rebalanceCount: p.rebalanceCount ?? 0, priceDrawdownPct: p.priceDrawdownPct ?? 0 }]));
     engine.closedTrades = state.closedTrades ?? [];
     engine.lastProcessedAtByPool = new Map(Object.entries(state.lastProcessedAtByPool ?? {}).map(([k, v]) => [k, Number(v)]));
     engine.lastClosedAtByPool = new Map(Object.entries(state.lastClosedAtByPool ?? {}).map(([k, v]) => [k, Number(v)]));
