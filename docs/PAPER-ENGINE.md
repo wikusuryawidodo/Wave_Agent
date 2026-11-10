@@ -207,3 +207,20 @@ Token/pool fields now also require organic score, bot-holder ratio, token fee ac
 `createMeteoraPnLReadOnlyAdapter` reads Meteora portfolio and per-pool PnL endpoints and can use an injected read-only SDK fallback. It does not convert headline PnL into per-interval `PositionV2` fee marks. The engine still accepts exact, independently verified bin-level `lpMark` inputs only.
 
 `npm run paper:runtime` runs the persistent orchestrator. Set `PAPER_SNAPSHOT_PROVIDER_MODULE` to a local module exporting `createSnapshotProvider({ config, env })`. It must return an object with `readOnly: true` and `getSnapshots()`, and must not expose signing or transaction methods. The orchestrator is single-flight, orders snapshots by timestamp, persists state after each snapshot, reports errors and stops cleanly. It does not itself construct the external Blockchain API/Router GPT client; `createPaperDataBridge` defines a read-only provider contract for that future connection.
+
+
+## HALO behavioural LP profile (paper-only)
+
+The configurable HALO profile translates the supplied 90-day aggregated closed-position observations into measurable guardrails. The report is observational, not causal evidence or a profit guarantee. Wave_Agent does not contain HALO's 1.7m-position dataset or a live HALO API feed; runtime metrics are calculated from Wave_Agent's own closed paper positions.
+
+- **Quote assets:** only canonical wrapped SOL and native USDC mints on Solana mainnet are allowed by default; verify the exact quote mint, not its display symbol.
+- **Position shape:** `HALO_POSITION_SHAPE_MODE=auto` tags aligned 5m/30m momentum as Spot and a 5m pullback inside a bullish 30m trend as Bid-Ask. This is a paper intent tag; the current range planner does not yet generate Meteora's exact per-bin Spot/Bid-Ask liquidity distribution.
+- **Holding:** soft profit-taking waits at least 20 minutes; 59 minutes is a reference/measurement target, not a mandatory hold. Hard stop, tracked-wallet withdrawal, missing verified fee marks, out-of-range timeout and other risk exits are never delayed.
+- **Fee retention:** candidate economics estimates the share of gross position fees left after inventory/IL giveback. Default floor is 40%; realized PnL still includes fees, inventory PnL and round-trip costs.
+- **Pool re-entry:** a score bonus is granted only after at least two closed trades in the exact pool, positive combined net PnL and at least 40% fee retention. It never bypasses freshness, security, wallet, fee-replay or risk checks.
+- **Concurrency:** up to five paper positions by default. Aggregate risk remains 0.6% equity and capital usage remains capped at 90%; five is a ceiling, not a target.
+- **Sizing:** starts at 0.15% equity risk per position. The staged ceiling is 0.30% after 100/200/300 closed positions in the rolling 90-day sample, positive aggregate net PnL, fee retention >=40%, and profit factor >=1.2/1.3/1.4 respectively. The 0.6% aggregate risk budget and 90% capital cap are unchanged.
+
+The paper summary reports median hold time, share closed under 15 minutes, share held at least 24 hours, fee retention after inventory giveback, repeated-pool share, positions per pool, Spot/Bid-Ask share, net PnL and profit factor. HALO-style wallet ranking reduces win-rate weight when behaviour fields are available; without those optional fields, the ranker uses its backward-compatible metric set.
+
+See `.env.example` for `HALO_PROFILE_ENABLED`, `HALO_MIN_HOLD_MINUTES`, `HALO_TARGET_HOLD_MINUTES`, `HALO_MIN_FEE_RETENTION_PCT`, `HALO_POOL_REENTRY_*`, `HALO_POSITION_SHAPE_MODE`, `HALO_ALLOWED_QUOTE_MINTS`, and `HALO_SIZE_UP_*`. The staged size-up is a risk heuristic, not a claim that these thresholds reproduce HALO's winner cohort.

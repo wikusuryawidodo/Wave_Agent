@@ -57,3 +57,21 @@ test('verified wallet activity summary reports adds, removals and net quote flow
   assert.equal(result.addEvents, 2);
   assert.equal(result.removeEvents, 1);
 });
+
+
+test('HALO wallet ranking gives more weight to net PnL, fee retention and behaviour than win rate', () => {
+  const now = 1_800_000_000_000;
+  const base = {
+    verified: true, source: 'top-lp-wallet-index', updatedAt: now - 1000,
+    closedPositions: 120, winRatePct: 65, realizedPnlUsd: 500, feesEarnedUsd: 1000,
+    maxDrawdownPct: 10, rangeEfficiencyPct: 75
+  };
+  const retained = rankTopLpWallets([{
+    ...base, address: 'wallet-retains-fees', feeRetentionPct: 55, medianHoldMinutes: 59, repeatPoolPositionSharePct: 87
+  }, {
+    ...base, address: 'wallet-gives-back-fees', realizedPnlUsd: 520, feeRetentionPct: 10,
+    medianHoldMinutes: 17, repeatPoolPositionSharePct: 48
+  }], { now, minScore: 0 });
+  assert.equal(retained[0].address, 'wallet-retains-fees');
+  assert.equal(retained[0].metrics.feeRetentionPct, 55);
+});

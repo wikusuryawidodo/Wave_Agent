@@ -25,6 +25,9 @@ export function rankTopLpWallets(records, {
     const fees = Number(record.feesEarnedUsd);
     const drawdown = Number(record.maxDrawdownPct);
     const rangeEfficiency = Number(record.rangeEfficiencyPct ?? 0);
+    const feeRetention = Number(record.feeRetentionPct);
+    const medianHoldMinutes = Number(record.medianHoldMinutes);
+    const repeatPoolShare = Number(record.repeatPoolPositionSharePct);
     const verified = record.verified === true && record.source === 'top-lp-wallet-index';
     const complete = Boolean(address) &&
       [updatedAt, closed, winRate, realized, fees, drawdown, rangeEfficiency].every(Number.isFinite);
@@ -44,7 +47,14 @@ export function rankTopLpWallets(records, {
     const feeScore = finite(fees) ? Math.max(0, Math.min(100, 50 + 10 * Math.log10(Math.max(0, fees) + 1))) : 0;
     const rangeScore = finite(rangeEfficiency) ? Math.max(0, Math.min(100, rangeEfficiency)) : 0;
     const drawdownScore = finite(drawdown) ? Math.max(0, 100 - drawdown * 2) : 0;
-    const score = Math.round(pnlScore * 0.30 + winScore * 0.25 + feeScore * 0.15 + rangeScore * 0.15 + drawdownScore * 0.15);
+    const hasHaloBehaviour = [feeRetention, medianHoldMinutes, repeatPoolShare].every(Number.isFinite);
+    const retentionScore = Number.isFinite(feeRetention) ? Math.max(0, Math.min(100, feeRetention)) : 0;
+    const holdScore = Number.isFinite(medianHoldMinutes) ? Math.max(0, Math.min(100, medianHoldMinutes / 59 * 100)) : 0;
+    const repeatScore = Number.isFinite(repeatPoolShare) ? Math.max(0, Math.min(100, repeatPoolShare)) : 0;
+    // HALO telemetry makes net PnL and retained fees more important than win rate.
+    const score = Math.round(hasHaloBehaviour
+      ? pnlScore * 0.35 + winScore * 0.10 + feeScore * 0.05 + rangeScore * 0.10 + drawdownScore * 0.10 + retentionScore * 0.15 + holdScore * 0.05 + repeatScore * 0.10
+      : pnlScore * 0.40 + winScore * 0.10 + feeScore * 0.10 + rangeScore * 0.15 + drawdownScore * 0.20 + 5);
     if (score < minScore) failures.push('wallet rank score below floor');
     return {
       address,
@@ -58,6 +68,9 @@ export function rankTopLpWallets(records, {
         feesEarnedUsd: Number.isFinite(fees) ? fees : null,
         maxDrawdownPct: Number.isFinite(drawdown) ? drawdown : null,
         rangeEfficiencyPct: Number.isFinite(rangeEfficiency) ? rangeEfficiency : null,
+        feeRetentionPct: Number.isFinite(feeRetention) ? feeRetention : null,
+        medianHoldMinutes: Number.isFinite(medianHoldMinutes) ? medianHoldMinutes : null,
+        repeatPoolPositionSharePct: Number.isFinite(repeatPoolShare) ? repeatPoolShare : null,
         ageSec: Number.isFinite(ageSec) ? ageSec : null
       },
       source: 'top-lp-wallet-index'

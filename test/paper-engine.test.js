@@ -44,6 +44,7 @@ function snapshot(timestamp, overrides = {}) {
     pool: {
       poolAddress: 'pool-lp-test',
       tokenMint: 'mint-lp-test',
+      quoteMint: 'So11111111111111111111111111111111111111112',
       chain: 'solana',
       symbol: 'TEST/SOL',
       tvlUsd: 100_000,
@@ -154,6 +155,8 @@ test('balanced LP entry requires economic edge, verified wallet adds, security a
   assert.ok(result.entry.position.allocationUsd <= 1_250);
   assert.ok(result.entry.position.reservedRiskUsd <= 30.000001);
   assert.equal(result.entry.position.markAccuracy, 'entry-estimate');
+  assert.equal(result.entry.position.plannedShape, 'spot');
+  assert.equal(result.portfolio.halo.enabled, true);
 });
 
 test('wallet convergence rejects unverified, wrong-pool, wrong-program and duplicate instructions', () => {
@@ -416,4 +419,35 @@ test('entry fails closed when verified 24 hour wallet activity summary is missin
   const result = e.evaluateEntry(s, s.timestamp);
   assert.equal(result.eligible, false);
   assert.match(result.reason, /24h LP wallet activity summary missing/);
+});
+
+
+test('HALO profile restricts quote assets to canonical SOL/USDC mints', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  s.pairEvidence.quoteToken.address = 'not-a-supported-quote';
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.match(result.reason, /only verified SOL or native USDC/);
+});
+
+test('HALO soft profit exits respect minimum hold but hard stops remain immediate', async () => {
+  const e = engine({ config: { haloMinHoldMinutes: 20 } });
+  const start = 1_800_000_000_000;
+  await e.processSnapshot(snapshot(start));
+  const earlyProfit = snapshot(start + 60_000, { inventoryPnlPct: 10 });
+  earlyProfit.walletSignals = [];
+  const early = await e.processSnapshot(earlyProfit);
+  assert.equal(early.exits.length, 0);
+  const hardStop = snapshot(start + 120_000, { inventoryPnlPct: -10 });
+  hardStop.priceUsd = [...e.positions.values()][0].entryPrice * 0.49;
+  hardStop.walletSignals = [];
+  const stopped = await e.processSnapshot(hardStop);
+  assert.equal(stopped.exits[0].reason, 'asymmetric-price-hard-stop');
+});
+
+test('HALO concurrency ceiling does not change aggregate portfolio risk', () => {
+  const e = engine({ config: { maxOpenPositions: 5 } });
+  assert.equal(e.config.maxOpenPositions, 5);
+  assert.equal(e.config.maxPortfolioRiskPct, 0.006);
 });
