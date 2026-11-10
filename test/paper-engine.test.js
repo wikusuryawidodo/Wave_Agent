@@ -179,16 +179,17 @@ test('stress loss above the configured ceiling is rejected', () => {
   assert.match(result.reason, /stress-loss/);
 });
 
-test('stress-adjusted hard stop closes a paper LP position', async () => {
+test('asymmetric hard stop closes after a 50 percent spot drawdown', async () => {
   const e = engine();
   const start = 1_800_000_000_000;
   const first = await e.processSnapshot(snapshot(start));
   assert.equal(first.entry.status, 'opened');
   const next = snapshot(start + 60_000, { inventoryPnlPct: -6.5 });
+  next.priceUsd = first.entry.position.entryPrice * 0.49;
   next.walletSignals = [];
   const result = await e.processSnapshot(next);
   assert.equal(result.exits.length, 1);
-  assert.equal(result.exits[0].reason, 'stress-adjusted-hard-stop');
+  assert.equal(result.exits[0].reason, 'asymmetric-price-hard-stop');
   assert.equal(result.portfolio.openPositions, 0);
 });
 
@@ -328,4 +329,63 @@ test('verified per-bin position fee marks accrue exact reported fees, not pool T
   update.walletSignals = [];
   await e.processSnapshot(update);
   assert.equal([...e.positions.values()][0].feesAccruedUsd, 7.25);
+});
+
+test('asymmetric rebalance requires a fresh verified router quote and reuses existing capital', async () => {
+  const e = engine();
+  const start = 1_800_000_000_000;
+  const first = await e.processSnapshot(snapshot(start));
+  const price = first.entry.position.entryPrice * 0.84;
+  const noQuote = snapshot(start + 60_000, { priceUsd: price });
+  noQuote.walletSignals = [];
+  const pending = await e.processSnapshot(noQuote);
+  assert.equal(pending.rebalances.length, 1);
+  assert.equal(pending.rebalances[0].status, 'quote-required');
+  assert.equal(pending.rebalances[0].applied, false);
+
+  const withQuote = snapshot(start + 120_000, {
+    priceUsd: price,
+    rebalanceQuote: {
+      verified: true,
+      source: 'read-only-router-quote',
+      poolAddress: 'pool-lp-test',
+      timestamp: start + 120_000,
+      priceImpactBps: 25,
+      residualBalancePct: 2,
+      fundingMode: 'reuse-existing-inventory',
+      additionalCapitalUsd: 0,
+      range: { lower: price * 0.90, upper: price * 1.10 }
+    }
+  });
+  withQuote.walletSignals = [];
+  const applied = await e.processSnapshot(withQuote);
+  assert.equal(applied.rebalances.length, 1);
+  assert.equal(applied.rebalances[0].status, 'rebalance-ready');
+  assert.equal(applied.rebalances[0].applied, true);
+  const live = [...e.positions.values()][0];
+  assert.deepEqual(live.range, { lower: price * 0.90, upper: price * 1.10 });
+  assert.deepEqual(live.rebalanceLevelsCompleted, [15]);
+  assert.equal(live.allocationUsd, first.entry.position.allocationUsd);
+});
+
+test('portfolio capital headroom respects the 90 percent utilization ceiling', () => {
+  const e = engine();
+  e.cashUsd = 1_200;
+  e.positions.set('synthetic-position', {
+    id: 'synthetic-position', poolAddress: 'p', allocationUsd: 8_800,
+    reservedRiskUsd: 1, inventoryPnlUsd: 0, feesAccruedUsd: 0, estimatedRoundTripCostUsd: 0
+  });
+  assert.equal(e.capitalUsedUsd, 8_800);
+  assert.equal(e.availableCapitalUsd, 200);
+  assert.ok(e.capitalUsedUsd + e.availableCapitalUsd <= e.equityUsd * 0.90 + 1e-8);
+  assert.equal(e.summary().maxPortfolioUtilizationPct, 0.90);
+});
+
+test('entry rejects wallet convergence events without trusted top LP wallet rank', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  s.walletSignals = s.walletSignals.map(event => ({ ...event, walletRankVerified: false }));
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.match(result.reason, /wallet LP convergence/);
 });
