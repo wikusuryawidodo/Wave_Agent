@@ -433,7 +433,7 @@ export class PaperTradingEngine {
     const securityScore = 100;
     const averageWalletRankScore = walletAdds.reduce((sum, event) => sum + event.walletRankScore, 0) / Math.max(1, walletAdds.length);
     const convergenceScore = clamp(walletAdds.length / 4, 0, 1) * 100;
-    const walletScore = clamp(convergenceScore * 0.25 + averageWalletRankScore * 0.40 + Number(walletActivity.walletActivityScore) * 0.35, 0, 100);
+    const walletScore = clamp(convergenceScore * 0.25 + averageWalletRankScore * 0.40 + Number(walletActivity?.walletActivityScore ?? 0) * 0.35, 0, 100);
     const technicalScore = clamp(
       35 + (five.rsi >= 48 && five.rsi <= 60 ? 15 : 5) +
       (thirty.adx <= 25 ? 15 : 5) + (five.volumeRatio >= 1 && five.volumeRatio <= 2.5 ? 15 : 5) +
