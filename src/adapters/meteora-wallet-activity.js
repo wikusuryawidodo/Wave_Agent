@@ -43,7 +43,7 @@ export function decodeMeteoraLiquidityEvents(transaction, eventCoder, {
   ];
   const events = [];
   for (const group of transaction.meta.innerInstructions ?? []) {
-    for (const instruction of group.instructions ?? []) {
+    for (const [innerInstructionIndex, instruction] of (group.instructions ?? []).entries()) {
       if (allKeys[Number(instruction.programIdIndex)] !== programId || !instruction.data) continue;
       let bytes;
       try { bytes = decodeBase58(instruction.data); } catch { continue; }
@@ -59,6 +59,7 @@ export function decodeMeteoraLiquidityEvents(transaction, eventCoder, {
         poolAddress: String(data.lbPair?.toBase58?.() ?? data.lbPair ?? ''),
         amountsRaw: Array.isArray(data.amounts) ? data.amounts.map(rawNumber).map(String) : [],
         instructionIndex: Number(group.index ?? -1),
+        innerInstructionIndex,
         programId,
         blockTime: Number(transaction.blockTime) * 1000,
         slot: Number(transaction.slot ?? 0),
