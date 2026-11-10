@@ -59,7 +59,6 @@ export const config = Object.freeze({
   feeCaptureShare: Number(process.env.FEE_CAPTURE_SHARE ?? 0.65),
   expectedHoldHours: Number(process.env.EXPECTED_HOLD_HOURS ?? 168),
   roundTripCostBps: Number(process.env.ROUND_TRIP_COST_BPS ?? 30),
-  maxVolatility24hPct: Number(process.env.MAX_VOLATILITY_24H_PCT ?? 7),
   maxStressLossPct: Number(process.env.MAX_STRESS_LOSS_PCT ?? 8),
   maxDailyLossPct: Number(process.env.MAX_DAILY_LOSS_PCT ?? 1.5),
   maxDrawdownPct: Number(process.env.MAX_DRAWDOWN_PCT ?? 5),
