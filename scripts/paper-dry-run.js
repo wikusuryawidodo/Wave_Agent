@@ -36,6 +36,9 @@ function buildSnapshot(index, now) {
     instructionIndex,
     quoteSide: true,
     quoteAmountUsd: 150,
+    walletRankVerified: true,
+    walletRankSource: 'top-lp-wallet-index',
+    walletRankScore: 82,
     timestamp: now - offset
   });
 
@@ -51,6 +54,9 @@ function buildSnapshot(index, now) {
       volume24hUsd: 150_000,
       fees24hUsd: 150,
       fees7dUsd: 1_000,
+      binStep: 100,
+      feeActiveTvlRatio: 0.20,
+      quoteOrganicScore: 82,
       dataAgeSec: 5,
       volatility24hPct: 3.5,
       liquidityTrend24hPct: 0
@@ -80,7 +86,12 @@ function buildSnapshot(index, now) {
       top10DevWalletPct: 5,
       holders: 1_000,
       tokenAgeDays: 30,
-      marketCapUsd: 2_000_000
+      marketCapUsd: 2_000_000,
+      organicScore: 82,
+      botHoldersPct: 8,
+      tokenFeesSol: 55,
+      devBlocked: false,
+      launchpad: 'pool_meteora'
     },
     marketData: { candles5mAgeSec: 30, candles30mAgeSec: 30 },
     candles5m,
@@ -161,6 +172,7 @@ async function runScenario({ name, winRateTargetPct }) {
       const stop = buildSnapshot(index, now + MINUTE);
       stop.walletSignals = [];
       stop.inventoryPnlPct = -5.2;
+      stop.priceUsd = stop.priceUsd * 0.49;
       const closeResult = await engine.processSnapshot(stop);
       updateDrawdown(closeResult);
     }
@@ -208,9 +220,10 @@ const report = {
     initialEquityUsd: INITIAL_EQUITY_USD,
     tradesPerScenario: TRADE_COUNT,
     winnerExit: 'peak +6.5%, then retrace to +4.5% to trigger profit trailing lock',
-    loserExit: 'inventory return -5.2% to trigger the stress-adjusted hard stop',
+    loserExit: '50% spot drawdown from entry to trigger the asymmetric hard stop',
+    rebalancePolicy: 'paper range rebalance proposals at -15%, -30% and -45%; fresh read-only router quote and existing inventory only',
     allCandidates: 'synthetic pair age 21d, market cap $2m, FDV $2.4m, pair liquidity $400k, 24h fees $150, 7d fees $1,000',
-    risk: '0.3% equity risk per position, 0.6% aggregate risk, 12.5% maximum allocation',
+    risk: '0.3% equity risk per position, 0.6% aggregate risk, max 90% portfolio capital utilization and 10% cash reserve',
     exclusions: 'No real wallet history, no real Meteora bin replay, no real fill/slippage or observed LP fee checkpoints'
   },
   results
