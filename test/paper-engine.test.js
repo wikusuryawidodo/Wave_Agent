@@ -28,6 +28,9 @@ function verifiedWalletEvent(wallet, timestamp, instructionIndex) {
     instructionIndex,
     quoteSide: true,
     quoteAmountUsd: 150,
+    walletRankVerified: true,
+    walletRankSource: 'top-lp-wallet-index',
+    walletRankScore: 82,
     timestamp
   };
 }
@@ -47,6 +50,9 @@ function snapshot(timestamp, overrides = {}) {
       volume24hUsd: 150_000,
       fees24hUsd: 150,
       fees7dUsd: 1_000,
+      binStep: 100,
+      feeActiveTvlRatio: 0.20,
+      quoteOrganicScore: 82,
       dataAgeSec: 5,
       volatility24hPct: 3.5,
       liquidityTrend24hPct: 0
@@ -76,7 +82,12 @@ function snapshot(timestamp, overrides = {}) {
       top10DevWalletPct: 5,
       holders: 1_000,
       tokenAgeDays: 30,
-      marketCapUsd: 2_000_000
+      marketCapUsd: 2_000_000,
+      organicScore: 82,
+      botHoldersPct: 8,
+      tokenFeesSol: 55,
+      devBlocked: false,
+      launchpad: 'pool_meteora'
     },
     marketData: { candles5mAgeSec: 30, candles30mAgeSec: 120 },
     candles5m: five,
