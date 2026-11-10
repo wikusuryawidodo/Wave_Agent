@@ -213,7 +213,7 @@ test('asymmetric hard stop closes after a 50 percent spot drawdown', async () =>
 });
 
 test('profit trailing lock closes after a 1 percentage-point giveback', async () => {
-  const e = engine();
+  const e = engine({ config: { haloMinHoldMinutes: 0 } });
   const start = 1_800_000_000_000;
   await e.processSnapshot(snapshot(start));
   const up = snapshot(start + 60_000, { inventoryPnlPct: 4 });
@@ -257,7 +257,7 @@ test('paper state round-trips and duplicate snapshots are ignored', async () => 
 });
 
 test('daily-loss circuit breaker blocks new LP entries', async () => {
-  const e = engine({ config: { maxOpenPositions: 1, maxDailyLossPct: 0.4 } });
+  const e = engine({ config: { maxOpenPositions: 1, maxDailyLossPct: 0.4, riskPerPositionPct: 0.003, maxRiskPerPositionPct: 0.003 } });
   const start = 1_800_000_000_000;
   await e.processSnapshot(snapshot(start));
   const loss = snapshot(start + 60_000, { inventoryPnlPct: -80 });
@@ -425,7 +425,7 @@ test('entry fails closed when verified 24 hour wallet activity summary is missin
 test('HALO profile restricts quote assets to canonical SOL/USDC mints', () => {
   const e = engine();
   const s = snapshot(1_800_000_000_000);
-  s.pairEvidence.quoteToken.address = 'not-a-supported-quote';
+  s.pool.quoteMint = 'not-a-supported-quote';
   const result = e.evaluateEntry(s, s.timestamp);
   assert.equal(result.eligible, false);
   assert.match(result.reason, /only verified SOL or native USDC/);

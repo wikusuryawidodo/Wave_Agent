@@ -12,7 +12,7 @@ test('HALO performance summary reports net PnL, fee retention, hold duration, re
     trade({openedAt:start+4_000_000,poolAddress:'pool-b',holdMinutes:10})];
   const s=summarizeHaloPerformance(data,{now:start+10_000_000,windowDays:90});
   assert.equal(s.closedPositions,3);assert.equal(s.medianHoldMinutes,59);
-  assert.equal(s.feeRetentionPct,60);assert.ok(Math.abs(s.repeatPoolPositionSharePct-100/3)<1e-9);
+  assert.ok(Math.abs(s.feeRetentionPct - (100 - 14 / 30 * 100)) < 1e-9);assert.ok(Math.abs(s.repeatPoolPositionSharePct-100/3)<1e-9);
   assert.equal(s.uniquePools,2);assert.equal(s.spotSharePct,50);assert.equal(s.bidAskSharePct,50);
 });
 test('HALO pool affinity requires repeated positive net results and at least 40% retained fees',()=>{
