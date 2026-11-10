@@ -97,6 +97,21 @@ function snapshot(timestamp, overrides = {}) {
       verifiedWalletEvent('wallet-a', timestamp - 20_000, 1),
       verifiedWalletEvent('wallet-b', timestamp - 10_000, 2)
     ],
+    walletActivity: {
+      verified: true,
+      source: 'helius-wallet-monitor',
+      generatedAt: timestamp,
+      dataAgeSec: 0,
+      windowHours: 24,
+      uniqueActiveWallets24h: 2,
+      addEvents: 2,
+      removeEvents: 0,
+      quoteAddsUsd: 300,
+      quoteRemovesUsd: 0,
+      netQuoteFlowUsd: 300,
+      averageWalletRankScore: 82,
+      walletActivityScore: 82
+    },
     lpMark: {
       verified: true,
       source: 'meteora-position-v2-bin-fee-replay',
@@ -391,4 +406,13 @@ test('entry rejects wallet convergence events without trusted top LP wallet rank
   const result = e.evaluateEntry(s, s.timestamp);
   assert.equal(result.eligible, false);
   assert.match(result.reason, /wallet LP convergence/);
+});
+
+test('entry fails closed when verified 24 hour wallet activity summary is missing', () => {
+  const e = engine();
+  const s = snapshot(1_800_000_000_000);
+  delete s.walletActivity;
+  const result = e.evaluateEntry(s, s.timestamp);
+  assert.equal(result.eligible, false);
+  assert.match(result.reason, /24h LP wallet activity summary missing/);
 });
