@@ -36,6 +36,7 @@ const engineConfig = {
   rebalanceLevelsPct: config.rebalanceLevelsPct,
   rebalanceQuoteMaxAgeSec: config.rebalanceQuoteMaxAgeSec,
   requireRankedWallets: config.requireRankedWallets,
+  requireWalletActivity: config.requireWalletActivity,
   minWalletRankScore: config.minWalletRankScore,
   maxOpenPositions: config.maxOpenPositions,
   minTvlUsd: config.minTvlUsd,
