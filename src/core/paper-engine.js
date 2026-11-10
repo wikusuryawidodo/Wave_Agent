@@ -141,7 +141,8 @@ function uniqueVerifiedWalletEvents(signals, now, config, poolAddress, eventType
         signature,
         instructionIndex: index,
         timestamp: time,
-        quoteAmountUsd: Number(signal.quoteAmountUsd)
+        quoteAmountUsd: Number(signal.quoteAmountUsd),
+        walletRankScore: Number(signal.walletRankScore)
       });
     }
   }
@@ -356,7 +357,18 @@ export class PaperTradingEngine {
       return fail('verified wallet LP convergence below threshold', { walletCount: walletAdds.length });
     }
 
-    const lpRisk = snapshot.lpRisk ?? {};
+    const walletActivity = snapshot.walletActivity ?? null;
+    if (walletActivity) {
+      if (walletActivity.verified !== true || walletActivity.source !== 'helius-wallet-monitor' ||
+          !isFiniteNumber(walletActivity.dataAgeSec) || Number(walletActivity.dataAgeSec) > this.config.maxPoolDataAgeSec ||
+          !isFiniteNumber(walletActivity.uniqueActiveWallets24h) || Number(walletActivity.uniqueActiveWallets24h) < this.config.walletConvergenceThreshold ||
+          !isFiniteNumber(walletActivity.walletActivityScore) || Number(walletActivity.walletActivityScore) < this.config.minWalletRankScore ||
+          !isFiniteNumber(walletActivity.netQuoteFlowUsd) || Number(walletActivity.netQuoteFlowUsd) < 0) {
+        return fail('verified LP wallet activity/flow gate failed', { walletActivity });
+      }
+    }
+
+    const lpRisk = snapshot.lpRisk ?? {});
     if (lpRisk.verified !== true || lpRisk.source !== 'meteora-bin-stress-simulator') {
       return fail('verified bin-level LP stress simulation required');
     }
@@ -413,7 +425,9 @@ export class PaperTradingEngine {
     if (!economics.eligible) return fail('LP economics gate failed', { hardFails: economics.hardFails, economics });
 
     const securityScore = 100;
-    const walletScore = clamp(walletAdds.length / 4, 0, 1) * 100;
+    const averageWalletRankScore = walletAdds.reduce((sum, event) => sum + event.walletRankScore, 0) / Math.max(1, walletAdds.length);
+    const convergenceScore = clamp(walletAdds.length / 4, 0, 1) * 100;
+    const walletScore = clamp(convergenceScore * 0.35 + averageWalletRankScore * 0.65, 0, 100);
     const technicalScore = clamp(
       35 + (five.rsi >= 48 && five.rsi <= 60 ? 15 : 5) +
       (thirty.adx <= 25 ? 15 : 5) + (five.volumeRatio >= 1 && five.volumeRatio <= 2.5 ? 15 : 5) +
@@ -437,6 +451,8 @@ export class PaperTradingEngine {
       hybridScore,
       walletCount: walletAdds.length,
       walletAdds,
+      walletActivity: walletActivity ? structuredClone(walletActivity) : null,
+      averageWalletRankScore,
       technical: { five, thirty, bbPositionPct: bbPosition },
       security: { verified: true, holders: security.snapshot.holders },
       pairRisk,
