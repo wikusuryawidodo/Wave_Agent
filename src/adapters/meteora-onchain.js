@@ -47,9 +47,27 @@ export function createMeteoraOnchainAdapter({ rpcUrl=process.env.SOLANA_RPC_URL,
     async getPosition(poolAddress,ownerAddress) {
       const {DLMM,PublicKey,connection}=await load();
       const pool=await DLMM.create(connection,new PublicKey(poolAddress),{cluster:'mainnet-beta'});
-      const result=await pool.getPositionsByUserAndLbPair(new PublicKey(ownerAddress));
+      const owner=new PublicKey(ownerAddress);
+      const result=await pool.getPositionsByUserAndLbPair(owner);
+      const xMint=pool.lbPair?.tokenXMint?.toBase58?.() ?? String(pool.lbPair?.tokenXMint ?? '');
+      const yMint=pool.lbPair?.tokenYMint?.toBase58?.() ?? String(pool.lbPair?.tokenYMint ?? '');
+      const readDecimals=async mint=>{
+        if(!mint)return null;
+        try {
+          const parsed=await connection.getParsedAccountInfo(new PublicKey(mint),commitment);
+          const decimals=parsed.value?.data?.parsed?.info?.decimals;
+          return Number.isInteger(Number(decimals)) ? Number(decimals) : null;
+        } catch { return null; }
+      };
+      const [decimalsX,decimalsY]=await Promise.all([readDecimals(xMint),readDecimals(yMint)]);
       return (result.userPositions ?? []).map(p=>({
         publicKey:p.publicKey?.toBase58?.() ?? String(p.publicKey),
+        ownerAddress:ownerAddress,
+        poolAddress,
+        xMint,
+        yMint,
+        decimalsX,
+        decimalsY,
         lowerBinId:Number(p.positionData?.lowerBinId),
         upperBinId:Number(p.positionData?.upperBinId),
         totalXAmount:String(p.positionData?.totalXAmount ?? ''),
