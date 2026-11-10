@@ -70,11 +70,12 @@ The stdin worker consumes one JSON object per line. Required fields:
 - \`security\`: \`verified\`, \`mintAuthorityDisabled\`, \`freezeAuthorityDisabled\`, \`honeypot\`, \`scam\`, \`dataAgeSec\`, \`top10HoldersPct\`, \`top10DevWalletPct\`, \`holders\`, \`tokenAgeDays\`, \`marketCapUsd\`.
 - \`marketData\`: \`candles5mAgeSec\`, \`candles30mAgeSec\`.
 - \`candles5m\`, \`candles30m\`: at least 60 completed OHLCV candles each.
-- \`walletSignals\`: signature, instruction index, wallet or wallet group, exact pool, exact program ID, event type, timestamp, success=true, verified=true, quoteSide=true and quoteAmountUsd.
+- \`walletSignals\`: signature, outer and inner instruction indices, wallet or wallet group, exact pool, exact program ID, event type, timestamp, success=true, verified=true, quoteSide=true, quoteAmountUsd and verified top-wallet rank fields.
+- \`walletActivity\`: a fresh generated 24h summary from verified Helius LP events with `source=helius-wallet-monitor`, `generatedAt`, `uniqueActiveWallets24h`, `walletActivityScore` and `netQuoteFlowUsd`. This is mandatory by default; missing or stale summaries fail closed.
 - \`lpRisk\`: verified=true, source=\`meteora-bin-stress-simulator\`, stressLossPct, expectedInventoryDragPct7d, simulatedRangeCoveragePct.
 - For open position marks, prefer \`lpMark.inventoryPnlUsd\`, \`lpMark.feesSinceLastUsd\`, \`lpMark.inRange\` and optional \`lpMark.closeCostUsd\`. Otherwise PnL falls back to a simplified CLMM estimate and is explicitly labelled approximate.
 
-**Integration limitation:** the existing Helius watcher does not yet decode and normalize verified Meteora liquidity instructions, and no completed bin-stress simulator currently generates the required \`lpRisk\` evidence. This engine therefore cannot safely create entries from raw Helius or Meteora snapshots yet. An adapter and bin-level stress simulator are still necessary. Never manufacture \`verified=true\` from an unparsed log or transfer.
+**Integration limitation:** the read-only Helius/Meteora wallet decoder and PositionV2 resolver contract are now present, but they are not wired as a turnkey live snapshot producer. A local `PAPER_SNAPSHOT_PROVIDER_MODULE` must join verified wallet events, trusted wallet performance ranking, security, pair evidence, candles, pool metrics, bin fee marks, bin stress marks and any router quote. No completed bin-stress or PositionV2 historical fee replay provider is included yet. Never manufacture `verified=true` from an unparsed log or transfer.
 
 ## Accounting assumptions
 
