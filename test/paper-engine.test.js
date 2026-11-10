@@ -26,6 +26,7 @@ function verifiedWalletEvent(wallet, timestamp, instructionIndex) {
     poolAddress: 'pool-lp-test',
     signature: 'sig-' + wallet,
     instructionIndex,
+    innerInstructionIndex: instructionIndex,
     quoteSide: true,
     quoteAmountUsd: 150,
     walletRankVerified: true,
