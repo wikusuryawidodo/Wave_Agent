@@ -34,6 +34,7 @@ function buildSnapshot(index, now) {
     poolAddress,
     signature: 'synthetic-signature-' + index + '-' + wallet,
     instructionIndex,
+    innerInstructionIndex: instructionIndex,
     quoteSide: true,
     quoteAmountUsd: 150,
     walletRankVerified: true,
