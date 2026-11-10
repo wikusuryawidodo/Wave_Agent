@@ -21,6 +21,7 @@ const DEFAULTS = {
   rebalanceQuoteMaxAgeSec: 30,
   minWalletRankScore: 65,
   requireRankedWallets: true,
+  requireWalletActivity: true,
   maxTvlUsd: 150_000,
   maxMarketCapUsd: 10_000_000,
   minOrganicScore: 60,
@@ -358,9 +359,13 @@ export class PaperTradingEngine {
     }
 
     const walletActivity = snapshot.walletActivity ?? null;
+    if (this.config.requireWalletActivity && !walletActivity) {
+      return fail('verified 24h LP wallet activity summary missing');
+    }
     if (walletActivity) {
+      const generatedAt = timestampMs(walletActivity.generatedAt);
       if (walletActivity.verified !== true || walletActivity.source !== 'helius-wallet-monitor' ||
-          !isFiniteNumber(walletActivity.dataAgeSec) || Number(walletActivity.dataAgeSec) > this.config.maxPoolDataAgeSec ||
+          !Number.isFinite(generatedAt) || generatedAt > now + 5000 || now - generatedAt > this.config.maxPoolDataAgeSec * 1000 ||
           !isFiniteNumber(walletActivity.uniqueActiveWallets24h) || Number(walletActivity.uniqueActiveWallets24h) < this.config.walletConvergenceThreshold ||
           !isFiniteNumber(walletActivity.walletActivityScore) || Number(walletActivity.walletActivityScore) < this.config.minWalletRankScore ||
           !isFiniteNumber(walletActivity.netQuoteFlowUsd) || Number(walletActivity.netQuoteFlowUsd) < 0) {
@@ -427,7 +432,7 @@ export class PaperTradingEngine {
     const securityScore = 100;
     const averageWalletRankScore = walletAdds.reduce((sum, event) => sum + event.walletRankScore, 0) / Math.max(1, walletAdds.length);
     const convergenceScore = clamp(walletAdds.length / 4, 0, 1) * 100;
-    const walletScore = clamp(convergenceScore * 0.35 + averageWalletRankScore * 0.65, 0, 100);
+    const walletScore = clamp(convergenceScore * 0.25 + averageWalletRankScore * 0.40 + Number(walletActivity.walletActivityScore) * 0.35, 0, 100);
     const technicalScore = clamp(
       35 + (five.rsi >= 48 && five.rsi <= 60 ? 15 : 5) +
       (thirty.adx <= 25 ? 15 : 5) + (five.volumeRatio >= 1 && five.volumeRatio <= 2.5 ? 15 : 5) +
