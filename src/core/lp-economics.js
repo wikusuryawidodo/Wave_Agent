@@ -37,7 +37,8 @@ export function assessLpEconomics({
   maxVolatility24hPct = 7,
   maxStressLossPct = 8,
   maxInventoryDragPct7d = 1.0,
-  maxLiquidityOutflowPct = -8
+  maxLiquidityOutflowPct = -8,
+  minFeeRetentionPct = 0
 } = {}) {
   const totalTvl = requiredPositive('tvlUsd', tvlUsd);
   const activeTvl = requiredPositive('activeTvlUsd', activeTvlUsd);
@@ -77,6 +78,7 @@ export function assessLpEconomics({
   const allInDragPct = roundTripCostPct + inventoryDrag;
   const expectedNetEdgePct = grossPositionFeesPct - allInDragPct;
   const feeCoverageRatio = allInDragPct > 0 ? grossPositionFeesPct / allInDragPct : Infinity;
+  const feeRetentionPct = grossPositionFeesPct > 0 ? (grossPositionFeesPct - inventoryDrag) / grossPositionFeesPct * 100 : null;
   const requiredPositionFeeAprPct =
     (minNetEdgePct + allInDragPct) * 8760 / (expectedHoldHours * feeCaptureShare);
   const expectedFeesUsd = allocation * grossPositionFeesPct / 100;
@@ -103,6 +105,7 @@ export function assessLpEconomics({
   if (inventoryDrag > maxInventoryDragPct7d) hardFails.push('7d expected inventory loss exceeds ceiling');
   if (liquidityTrend < maxLiquidityOutflowPct) hardFails.push('pool liquidity outflow too severe');
   if (feeCoverageRatio < minFeeCoverageRatio) hardFails.push('projected position fees do not cover inventory loss plus costs by required multiple');
+  if (minFeeRetentionPct > 0 && (!Number.isFinite(feeRetentionPct) || feeRetentionPct < minFeeRetentionPct)) hardFails.push('projected fee retention after inventory/IL giveback is below HALO floor');
   if (expectedNetEdgePct < minNetEdgePct) hardFails.push('projected net fee return below minimum hurdle');
 
   return {
@@ -121,6 +124,7 @@ export function assessLpEconomics({
     allInDragPct,
     expectedNetEdgePct,
     feeCoverageRatio,
+    feeRetentionPct,
     requiredPositionFeeAprPct,
     expectedFeesUsd,
     expectedInventoryDragUsd,

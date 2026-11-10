@@ -7,10 +7,11 @@ const startingEquityUsd = explicitPaperEquity != null && explicitPaperEquity !==
 
 export const config = Object.freeze({
   mode: 'paper',
-  strategy: Object.freeze({ entry: 'hybrid-top-wallet', style: 'capital-capped-lp', exit: 'asymmetric-lp' }),
+  strategy: Object.freeze({ entry: 'hybrid-top-wallet', style: 'halo-behavioral-lp', exit: 'asymmetric-lp', behavior: 'closed-position-net-pnl' }),
   startingEquitySol,
   startingEquityUsd,
   maxRiskPerPositionPct: Number(process.env.MAX_RISK_PER_POSITION_PCT ?? 0.003),
+  baseRiskPerPositionPct: Number(process.env.BASE_RISK_PER_POSITION_PCT ?? 0.0015),
   maxPortfolioRiskPct: Number(process.env.MAX_PORTFOLIO_RISK_PCT ?? 0.006),
   maxPositionAllocationPct: Number(process.env.MAX_POSITION_ALLOCATION_PCT ?? 0.45),
   maxPortfolioUtilizationPct: Number(process.env.MAX_PORTFOLIO_UTILIZATION_PCT ?? 0.90),
@@ -32,7 +33,26 @@ export const config = Object.freeze({
   maxVolatility24hPct: Number(process.env.MAX_VOLATILITY_24H_PCT ?? 7),
   allowedLaunchpads: Object.freeze((process.env.ALLOWED_LAUNCHPADS ?? '').split(',').map(x => x.trim()).filter(Boolean)),
   blockedLaunchpads: Object.freeze((process.env.BLOCKED_LAUNCHPADS ?? '').split(',').map(x => x.trim()).filter(Boolean)),
-  maxOpenPositions: Number(process.env.MAX_OPEN_POSITIONS ?? 2),
+  maxOpenPositions: Number(process.env.MAX_OPEN_POSITIONS ?? 5),
+  haloEnabled: process.env.HALO_PROFILE_ENABLED !== 'false',
+  haloWindowDays: Number(process.env.HALO_HISTORY_WINDOW_DAYS ?? 90),
+  haloMinHoldMinutes: Number(process.env.HALO_MIN_HOLD_MINUTES ?? 20),
+  haloTargetHoldMinutes: Number(process.env.HALO_TARGET_HOLD_MINUTES ?? 59),
+  haloMinFeeRetentionPct: Number(process.env.HALO_MIN_FEE_RETENTION_PCT ?? 40),
+  haloPoolReentryMinClosedPositions: Number(process.env.HALO_POOL_REENTRY_MIN_CLOSED ?? 2),
+  haloPoolReentryScoreBonus: Number(process.env.HALO_POOL_REENTRY_SCORE_BONUS ?? 5),
+  haloPositionShapeMode: process.env.HALO_POSITION_SHAPE_MODE ?? 'auto',
+  haloBidAskRsiMin: Number(process.env.HALO_BID_ASK_RSI_MIN ?? 35),
+  haloBidAskRsiMax: Number(process.env.HALO_BID_ASK_RSI_MAX ?? 48),
+  haloAllowedQuoteMints: Object.freeze((process.env.HALO_ALLOWED_QUOTE_MINTS ?? 'So11111111111111111111111111111111111111112,EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v').split(',').map(x => x.trim()).filter(Boolean)),
+  haloSizeUpEnabled: process.env.HALO_SIZE_UP_ENABLED !== 'false',
+  haloSizeUpMinClosedPositions: Number(process.env.HALO_SIZE_UP_MIN_CLOSED_POSITIONS ?? 100),
+  haloSizeUpLevel2ClosedPositions: Number(process.env.HALO_SIZE_UP_LEVEL2_CLOSED_POSITIONS ?? 200),
+  haloSizeUpLevel3ClosedPositions: Number(process.env.HALO_SIZE_UP_LEVEL3_CLOSED_POSITIONS ?? 300),
+  haloSizeUpMinProfitFactor: Number(process.env.HALO_SIZE_UP_MIN_PROFIT_FACTOR ?? 1.2),
+  haloSizeUpLevel2ProfitFactor: Number(process.env.HALO_SIZE_UP_LEVEL2_PROFIT_FACTOR ?? 1.3),
+  haloSizeUpLevel3ProfitFactor: Number(process.env.HALO_SIZE_UP_LEVEL3_PROFIT_FACTOR ?? 1.4),
+  haloSizeUpMinFeeRetentionPct: Number(process.env.HALO_SIZE_UP_MIN_FEE_RETENTION_PCT ?? 40),
   minTvlUsd: Number(process.env.MIN_TVL_USD ?? 25_000),
   minVolume24hUsd: Number(process.env.MIN_VOLUME_24H_USD ?? 10_000),
   maxPoolDataAgeSec: Number(process.env.MAX_POOL_DATA_AGE_SEC ?? 90),
@@ -74,6 +94,10 @@ if (!Number.isFinite(startingEquityUsd) || startingEquityUsd < 0) {
 if (!(config.maxRiskPerPositionPct > 0 && config.maxRiskPerPositionPct <= 0.003)) {
   throw new Error('MAX_RISK_PER_POSITION_PCT must be >0 and <=0.3%');
 }
+if (!(config.baseRiskPerPositionPct > 0 && config.baseRiskPerPositionPct <= config.maxRiskPerPositionPct)) throw new Error('BASE_RISK_PER_POSITION_PCT must be <= max risk');
+if (config.haloMinHoldMinutes < 0 || config.haloTargetHoldMinutes < config.haloMinHoldMinutes || config.haloMinFeeRetentionPct < 0 || config.haloMinFeeRetentionPct > 100 ||
+    !['auto','spot','bid-ask'].includes(config.haloPositionShapeMode) || config.haloAllowedQuoteMints.length === 0 ||
+    config.haloBidAskRsiMin < 0 || config.haloBidAskRsiMax > 100 || config.haloBidAskRsiMin >= config.haloBidAskRsiMax) throw new Error('Invalid HALO profile settings');
 if (!(config.maxPortfolioRiskPct >= config.maxRiskPerPositionPct && config.maxPortfolioRiskPct <= 0.006)) {
   throw new Error('MAX_PORTFOLIO_RISK_PCT must be >= per-position risk and <=0.6%');
 }
@@ -100,6 +124,7 @@ if (config.minPoolFeeApr24hPct < 50 || config.minPoolFeeApr7dPct < 60 ||
     config.maxInventoryDragPct7d > 1) {
   throw new Error('Fee farming thresholds cannot be weakened below the conservative preset');
 }
-if (!Number.isInteger(config.maxOpenPositions) || config.maxOpenPositions < 1 || config.maxOpenPositions > 2) {
-  throw new Error('MAX_OPEN_POSITIONS must be 1 or 2');
-}
+if (!Number.isInteger(config.maxOpenPositions) || config.maxOpenPositions < 1 || config.maxOpenPositions > 8) throw new Error('MAX_OPEN_POSITIONS must be between 1 and 8');
+if (!(config.haloSizeUpMinClosedPositions >= 20 && config.haloSizeUpLevel2ClosedPositions >= config.haloSizeUpMinClosedPositions &&
+      config.haloSizeUpLevel3ClosedPositions >= config.haloSizeUpLevel2ClosedPositions && config.haloSizeUpMinProfitFactor >= 1 &&
+      config.haloSizeUpLevel2ProfitFactor >= config.haloSizeUpMinProfitFactor && config.haloSizeUpLevel3ProfitFactor >= config.haloSizeUpLevel2ProfitFactor)) throw new Error('Invalid HALO staged size-up settings');

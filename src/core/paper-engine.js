@@ -5,6 +5,7 @@ import { assessLpEconomics, sizeLpPosition } from './lp-economics.js';
 import { assessPairRisk } from './pair-risk.js';
 import { clmmInventoryReturnPct, rangeExposure } from './impermanent-loss.js';
 import { evaluateAsymmetricRebalance } from './asymmetric-rebalance.js';
+import { calculateHaloSizing, chooseHaloPositionShape, summarizeHaloPerformance, summarizeHaloPoolHistory } from './halo-lp-profile.js';
 
 export const METEORA_DLMM_PROGRAM_ID = 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo';
 
@@ -12,7 +13,8 @@ const DEFAULTS = {
   entry: 'hybrid',
   style: 'balanced-lp',
   exit: 'dynamic-lp',
-  riskPerPositionPct: 0.003,
+  riskPerPositionPct: 0.0015,
+  maxRiskPerPositionPct: 0.003,
   maxPortfolioRiskPct: 0.006,
   maxPositionAllocationPct: 0.45,
   maxPortfolioUtilizationPct: 0.90,
@@ -34,7 +36,13 @@ const DEFAULTS = {
   maxVolatility24hPct: 7,
   allowedLaunchpads: [],
   blockedLaunchpads: [],
-  maxOpenPositions: 2,
+  maxOpenPositions: 5,
+  haloEnabled: true, haloWindowDays: 90, haloMinHoldMinutes: 20, haloTargetHoldMinutes: 59,
+  haloMinFeeRetentionPct: 40, haloPoolReentryMinClosedPositions: 2, haloPoolReentryScoreBonus: 5,
+  haloPositionShapeMode: 'auto', haloBidAskRsiMin: 35, haloBidAskRsiMax: 48,
+  haloAllowedQuoteMints: ['So11111111111111111111111111111111111111112','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'],
+  haloSizeUpEnabled: true, haloSizeUpMinClosedPositions: 100, haloSizeUpLevel2ClosedPositions: 200, haloSizeUpLevel3ClosedPositions: 300,
+  haloSizeUpMinProfitFactor: 1.2, haloSizeUpLevel2ProfitFactor: 1.3, haloSizeUpLevel3ProfitFactor: 1.4, haloSizeUpMinFeeRetentionPct: 40,
   minTvlUsd: 25_000,
   minVolume24hUsd: 10_000,
   maxPoolDataAgeSec: 90,
@@ -194,6 +202,7 @@ export class PaperTradingEngine {
     for (const key of ['riskPerPositionPct', 'maxPortfolioRiskPct']) {
       if (!(this.config[key] > 0 && this.config[key] <= 0.01)) throw new Error(key + ' must be >0 and <=1%');
     }
+    if (!(this.config.maxRiskPerPositionPct >= this.config.riskPerPositionPct && this.config.maxRiskPerPositionPct <= 0.003)) throw new Error('HALO max risk must be >= base risk and <=0.3%');
     if (this.config.maxPortfolioRiskPct < this.config.riskPerPositionPct) throw new Error('Portfolio risk cannot be below per-position risk');
     if (!(this.config.maxPositionAllocationPct > 0 && this.config.maxPositionAllocationPct <= 0.45)) {
       throw new Error('Per-position capital allocation must be >0 and <=45%');
@@ -204,9 +213,9 @@ export class PaperTradingEngine {
     if (this.config.hardStopLossPct !== 50 || JSON.stringify(this.config.rebalanceLevelsPct) !== JSON.stringify([15, 30, 45])) {
       throw new Error('Asymmetric management is fixed to -15/-30/-45% rebalance and -50% hard stop');
     }
-    if (!Number.isInteger(this.config.maxOpenPositions) || this.config.maxOpenPositions < 1 || this.config.maxOpenPositions > 2) {
-      throw new Error('Balanced LP preset supports 1 or 2 open positions');
-    }
+    if (!Number.isInteger(this.config.maxOpenPositions) || this.config.maxOpenPositions < 1 || this.config.maxOpenPositions > 8) throw new Error('HALO profile supports 1 to 8 open positions');
+    if (!['auto','spot','bid-ask'].includes(this.config.haloPositionShapeMode) || !Array.isArray(this.config.haloAllowedQuoteMints) || !this.config.haloAllowedQuoteMints.length ||
+        this.config.haloMinHoldMinutes < 0 || this.config.haloTargetHoldMinutes < this.config.haloMinHoldMinutes || this.config.haloMinFeeRetentionPct < 0 || this.config.haloMinFeeRetentionPct > 100) throw new Error('Invalid HALO profile settings');
     if (this.config.minPoolFeeApr24hPct < 50 || this.config.minPoolFeeApr7dPct < 60 ||
         this.config.minPositionFeeApr24hPct < 120 || this.config.minPositionFeeApr7dPct < 150 ||
         this.config.minExpectedNetEdgePct < 1 || this.config.minFeeCoverageRatio < 2 ||
@@ -252,7 +261,18 @@ export class PaperTradingEngine {
     const losses = this.closedTrades.filter(t => t.netPnlUsd < 0).length;
     return {
       mode: 'paper',
-      strategy: { entry: this.config.entry, style: this.config.style, exit: this.config.exit },
+      strategy: { entry: this.config.entry, style: this.config.style, exit: this.config.exit, profile: this.config.haloEnabled ? 'halo-behavioral-lp' : 'balanced-lp' },
+      halo: {
+        enabled: this.config.haloEnabled, targetHoldMinutes: this.config.haloTargetHoldMinutes,
+        minSoftExitHoldMinutes: this.config.haloMinHoldMinutes, maxOpenPositions: this.config.maxOpenPositions,
+        performance: summarizeHaloPerformance(this.closedTrades, { now: Date.now(), windowDays: this.config.haloWindowDays }),
+        sizing: calculateHaloSizing(this.closedTrades, { now: Date.now(), windowDays: this.config.haloWindowDays,
+          enabled: this.config.haloSizeUpEnabled, baseRiskPerPositionPct: this.config.riskPerPositionPct, maxRiskPerPositionPct: this.config.maxRiskPerPositionPct,
+          minClosedPositions: this.config.haloSizeUpMinClosedPositions, level2ClosedPositions: this.config.haloSizeUpLevel2ClosedPositions,
+          level3ClosedPositions: this.config.haloSizeUpLevel3ClosedPositions, minProfitFactor: this.config.haloSizeUpMinProfitFactor,
+          level2ProfitFactor: this.config.haloSizeUpLevel2ProfitFactor, level3ProfitFactor: this.config.haloSizeUpLevel3ProfitFactor,
+          minFeeRetentionPct: this.config.haloSizeUpMinFeeRetentionPct })
+      },
       initialEquityUsd: this.initialEquityUsd,
       equityUsd: equity,
       cashUsd: this.cashUsd,
@@ -282,6 +302,8 @@ export class PaperTradingEngine {
     const poolAddress = String(pool.poolAddress ?? pool.address ?? '').trim();
     const fail = (reason, more = {}) => ({ eligible: false, reason, poolAddress: poolAddress || null, ...more });
     if (!poolAddress) return fail('missing pool address');
+    const quoteMint = String(pool.quoteMint ?? pool.quoteTokenMint ?? snapshot.pairEvidence?.quoteToken?.address ?? snapshot.pairEvidence?.quoteMint ?? '').trim();
+    if (this.config.haloEnabled && !this.config.haloAllowedQuoteMints.includes(quoteMint)) return fail('HALO profile accepts only verified SOL or native USDC quote mints', { quoteMint: quoteMint || null });
 
     const poolAge = Number(pool.dataAgeSec);
     if (!isFiniteNumber(pool.tvlUsd) || Number(pool.tvlUsd) < this.config.minTvlUsd || Number(pool.tvlUsd) > this.config.maxTvlUsd) return fail('TVL outside allowed range');
@@ -335,24 +357,18 @@ export class PaperTradingEngine {
 
     const bbPosition = five.bb.upper > five.bb.lower
       ? (five.price - five.bb.lower) / (five.bb.upper - five.bb.lower) * 100 : 50;
-    const marketPass =
-      five.supertrend === 'bullish' &&
-      thirty.supertrend === 'bullish' &&
-      thirty.price > thirty.ema50 &&
-      five.macdBias === 'bullish' &&
-      thirty.macdBias !== 'bearish' &&
-      five.rsi >= this.config.minRsi5m && five.rsi <= this.config.maxRsi5m &&
-      thirty.adx >= this.config.minTrendAdx && thirty.adx <= this.config.maxTrendAdx &&
-      five.volumeRatio >= this.config.minVolumeRatio5m &&
-      five.volumeRatio <= this.config.maxVolumeRatio5m &&
-      bbPosition >= 10 && bbPosition <= 85;
-    if (!marketPass) {
-      return fail('market confirmation failed', {
-        technical: { supertrend5m: five.supertrend, supertrend30m: thirty.supertrend,
-          macd5m: five.macdBias, rsi5m: five.rsi, adx30m: thirty.adx,
-          volumeRatio5m: five.volumeRatio, bbPositionPct: bbPosition }
-      });
-    }
+    const shapeDecision = this.config.haloEnabled
+      ? chooseHaloPositionShape({ five, thirty, mode: this.config.haloPositionShapeMode,
+          bidAskRsiMin: this.config.haloBidAskRsiMin, bidAskRsiMax: this.config.haloBidAskRsiMax,
+          minRsi5m: this.config.minRsi5m, maxRsi5m: this.config.maxRsi5m })
+      : { eligible: five.supertrend === 'bullish' && five.macdBias === 'bullish', shape: 'spot', reason: 'legacy balanced LP momentum' };
+    const marketPass = shapeDecision.eligible && thirty.adx >= this.config.minTrendAdx && thirty.adx <= this.config.maxTrendAdx &&
+      five.volumeRatio >= this.config.minVolumeRatio5m && five.volumeRatio <= this.config.maxVolumeRatio5m && bbPosition >= 10 && bbPosition <= 85;
+    if (!marketPass) return fail('market confirmation failed', {
+      technical: { supertrend5m: five.supertrend, supertrend30m: thirty.supertrend, macd5m: five.macdBias,
+        rsi5m: five.rsi, adx30m: thirty.adx, volumeRatio5m: five.volumeRatio, bbPositionPct: bbPosition,
+        haloShape: shapeDecision.shape, haloShapeReason: shapeDecision.reason }
+    });
 
     const walletAdds = uniqueVerifiedWalletEvents(snapshot.walletSignals, now, this.config, poolAddress, 'add-liquidity');
     if (walletAdds.length < this.config.walletConvergenceThreshold) {
@@ -417,6 +433,7 @@ export class PaperTradingEngine {
         minNetEdgePct: this.config.minExpectedNetEdgePct,
         minFeeCoverageRatio: this.config.minFeeCoverageRatio,
         maxInventoryDragPct7d: this.config.maxInventoryDragPct7d,
+        minFeeRetentionPct: this.config.haloEnabled ? this.config.haloMinFeeRetentionPct : 0,
         maxFeeSpikeRatio: this.config.maxFeeSpikeRatio,
         minActiveTvlRatio: this.config.minActiveTvlRatio,
         minVolumeToActiveTvl: this.config.minVolumeToActiveTvl,
@@ -440,8 +457,13 @@ export class PaperTradingEngine {
       clamp(85 - bbPosition, 0, 15), 0, 100
     );
     const economyScore = clamp(100 - Math.max(0, economics.poolFeeApr24hPct / Math.max(economics.poolFeeApr7dPct, 1) - 1) * 40, 0, 100);
-    const hybridScore = Math.round(securityScore * 0.20 + walletScore * 0.20 + technicalScore * 0.25 + economyScore * 0.35);
-    if (hybridScore < 70) return fail('hybrid LP score below threshold', { hybridScore, economics });
+    const baseHybridScore = Math.round(securityScore * 0.20 + walletScore * 0.20 + technicalScore * 0.25 + economyScore * 0.35);
+    const poolHistory = this.config.haloEnabled ? summarizeHaloPoolHistory(this.closedTrades, poolAddress, { now, windowDays: this.config.haloWindowDays,
+      minClosedPositions: this.config.haloPoolReentryMinClosedPositions, minFeeRetentionPct: this.config.haloMinFeeRetentionPct })
+      : { poolAddress, closedPositions: 0, reentryEligible: false, netPnlUsd: 0, feeRetentionPct: null };
+    const reentryScoreBonus = poolHistory.reentryEligible ? Math.min(this.config.haloPoolReentryScoreBonus, poolHistory.closedPositions) : 0;
+    const hybridScore = Math.min(100, baseHybridScore + reentryScoreBonus);
+    if (hybridScore < 70) return fail('hybrid LP score below threshold', { hybridScore, baseHybridScore, economics, poolHistory });
 
     const range = planLpRange({
       price: five.price,
@@ -454,7 +476,8 @@ export class PaperTradingEngine {
       reason: 'hybrid LP filters and positive net edge passed',
       poolAddress,
       tokenMint: pool.tokenMint ?? pool.baseMint ?? null,
-      hybridScore,
+      hybridScore, baseHybridScore, poolHistory, reentryScoreBonus,
+      plannedShape: shapeDecision.shape, shapeReason: shapeDecision.reason,
       walletCount: walletAdds.length,
       walletAdds,
       walletActivity: walletActivity ? structuredClone(walletActivity) : null,
@@ -584,10 +607,10 @@ export class PaperTradingEngine {
     if (position.outOfRangeSince != null && now - position.outOfRangeSince >= this.config.outOfRangeGraceMs) return 'out-of-range-timeout';
     if (position.trendReversalCount >= this.config.trendExitConfirmations) return '30m-trend-reversal';
     if (position.feeDecayCount >= this.config.feeDecayConfirmations) return 'fee-yield-decay';
-    if (position.peakPnlPct >= this.config.trailingActivationPct &&
-        position.peakPnlPct - position.netPnlPct >= this.config.trailingGivebackPct &&
-        position.netPnlPct > 0) return 'profit-trailing-lock';
-    if (position.netPnlPct >= this.config.takeProfitPct) return 'net-profit-target';
+    const haloSoftExitEligible = !this.config.haloEnabled || position.ageMs >= this.config.haloMinHoldMinutes * 60_000;
+    if (haloSoftExitEligible && position.peakPnlPct >= this.config.trailingActivationPct &&
+        position.peakPnlPct - position.netPnlPct >= this.config.trailingGivebackPct && position.netPnlPct > 0) return 'profit-trailing-lock';
+    if (haloSoftExitEligible && position.netPnlPct >= this.config.takeProfitPct) return 'net-profit-target';
     if (position.ageMs >= this.config.maxHoldMs) return 'maximum-holding-period';
     if (position.ageMs >= this.config.minPositionAgeMs && position.currentNetFeeEdgePct <= 0) return 'negative-forward-net-edge';
     return null;
@@ -676,7 +699,12 @@ export class PaperTradingEngine {
           equityUsd: this.equityUsd,
           cashUsd: this.availableCapitalUsd,
           reservedRiskUsd: this.reservedRiskUsd,
-          riskPerPositionPct: this.config.riskPerPositionPct,
+          riskPerPositionPct: calculateHaloSizing(this.closedTrades, { now, windowDays: this.config.haloWindowDays,
+            enabled: this.config.haloEnabled && this.config.haloSizeUpEnabled, baseRiskPerPositionPct: this.config.riskPerPositionPct,
+            maxRiskPerPositionPct: this.config.maxRiskPerPositionPct, minClosedPositions: this.config.haloSizeUpMinClosedPositions,
+            level2ClosedPositions: this.config.haloSizeUpLevel2ClosedPositions, level3ClosedPositions: this.config.haloSizeUpLevel3ClosedPositions,
+            minProfitFactor: this.config.haloSizeUpMinProfitFactor, level2ProfitFactor: this.config.haloSizeUpLevel2ProfitFactor,
+            level3ProfitFactor: this.config.haloSizeUpLevel3ProfitFactor, minFeeRetentionPct: this.config.haloSizeUpMinFeeRetentionPct }).effectiveRiskPerPositionPct,
           maxPortfolioRiskPct: this.config.maxPortfolioRiskPct,
           maxPositionAllocationPct: this.config.maxPositionAllocationPct,
           stopLossPct: evaluation.stopLossPct,
@@ -691,6 +719,8 @@ export class PaperTradingEngine {
             id: randomUUID(),
             poolAddress,
             tokenMint: evaluation.tokenMint,
+            plannedShape: evaluation.plannedShape ?? 'spot', shapeReason: evaluation.shapeReason ?? null,
+            poolReentryNumber: (evaluation.poolHistory?.closedPositions ?? 0) + 1,
             chain: pool.chain ?? 'solana',
             symbol: pool.symbol ?? null,
             allocationUsd: positionSize.allocationUsd,
